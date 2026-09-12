@@ -15,8 +15,18 @@ let retryExportAfterReopen = false;
 //  DOM
 // ════════════════════════════════════════════════════
 const $ = id => document.getElementById(id);
-const mainVideo   = $('main-video');
-const editorVideo = $('editor-video');
+// mainVideo/editorVideo both point at the same <video> element — it's moved
+// between #video-area and #editor-view (see openEditor/closeEditor) instead of
+// being duplicated, so there is only ever one hardware decoder in play. Two
+// separate <video> elements previously raced for Android's small fixed pool of
+// hardware decoder instances; if the main-view element grabbed the only slot,
+// the editor's element could sit at readyState 0 forever ("loads on the main
+// page, never loads in the editor tab"). Kept as two names since most of this
+// file, and the Playwright e2e test, refer to whichever one matches context.
+const mainVideo   = $('shared-video');
+const editorVideo = mainVideo;
+const videoArea   = $('video-area');
+const placeholder = $('placeholder');
 const fileInput   = $('file-input');
 const editorView  = $('editor-view');
 const recBar      = $('rec-bar');
@@ -52,18 +62,12 @@ fileInput.addEventListener('change', e => {
   if (videoSrc) URL.revokeObjectURL(videoSrc);
   videoSrc = URL.createObjectURL(file);
   videoFile = file;
+  // Picking a new file always happens from the main view, but make sure the
+  // shared element is anchored there even if it somehow got left in the editor.
+  videoArea.insertBefore(mainVideo, placeholder);
   mainVideo.src = videoSrc;
-  // Don't assign editorVideo.src here. On Android, pointing two <video> elements at
-  // the same file at the same time forces the browser to open two hardware codec
-  // pipelines simultaneously. Android devices expose only a small fixed pool of
-  // hardware decoder instances; competing for that pool causes one element to stall
-  // or freeze a few seconds into playback. Instead, editorVideo.src is assigned
-  // lazily the first time the editor is opened (see openEditor below), so only one
-  // decoder is ever active at a time.
-  editorVideo.removeAttribute('src');
-  editorVideo.load(); // resets readyState to HAVE_NOTHING, releasing any old decoder
   mainVideo.style.display = 'block';
-  $('placeholder').style.display = 'none';
+  placeholder.style.display = 'none';
   videoLoaded = true;
   fileInput.value = '';
   toast('Video loaded ✓');
@@ -104,37 +108,26 @@ mainVideo.addEventListener('pause', () => {
 function openEditor() {
   if (!videoLoaded) { toast('Open a video first'); return; }
   if (window._dbgZone) window._dbgZone.style.pointerEvents = 'none';
+  // Reparenting a <video> element preserves its decoder/currentTime/play state —
+  // unlike reassigning .src, this does not trigger a reload, so there's nothing
+  // to wait for and no playhead to resync.
+  editorView.insertBefore(mainVideo, editorView.firstChild);
   editorView.classList.add('open');
   updateScore();
   updateActionBtns();
   updateUndoRedo();
-
-  if (editorVideo.readyState < 1) {
-    // editorVideo has no src yet (first open, or after loading a new file).
-    // Assign the src now — only one decoder is running because mainVideo is
-    // paused while the editor is visible. Once the browser has parsed the file
-    // header (duration, dimensions, codec tables) it fires 'loadedmetadata',
-    // at which point we sync the playhead to wherever mainVideo was.
-    // { once: true } auto-removes the listener after it fires once.
-    editorVideo.src = videoSrc;
-    editorVideo.addEventListener('loadedmetadata', () => {
-      editorVideo.currentTime = mainVideo.currentTime;
-      vidProgress.max = editorVideo.duration || 100;
-      syncProgress();
-    }, { once: true });
-  } else {
-    // editorVideo already has the current video loaded — just sync the playhead.
-    editorVideo.currentTime = mainVideo.currentTime;
-    syncProgress();
-  }
+  syncProgress();
 }
 
+// Must match the #editor-view opacity transition duration in app.css so the
+// element doesn't visibly jump back to the main view mid-fade.
+const EDITOR_FADE_MS = 220;
+
 function closeEditor() {
-  editorVideo.pause();
-  mainVideo.currentTime = editorVideo.currentTime;
   if (window._dbgZone) window._dbgZone.style.pointerEvents = 'auto';
   editorView.classList.remove('open');
   updatePlayIcon();
+  setTimeout(() => videoArea.insertBefore(mainVideo, placeholder), EDITOR_FADE_MS);
 }
 
 // ════════════════════════════════════════════════════
@@ -502,23 +495,25 @@ function openReview() {
 // ════════════════════════════════════════════════════
 //  EXPORT PANEL
 // ════════════════════════════════════════════════════
-let exportEngine          = 'webcodecs';
 let exportQuality         = 'medium';
 let exportHighlightsOnly  = false;
 let exportDisableScoreboard = false;
 let exportDisableWatermark  = false;
+let exportScoreboardStyle    = 'classic'; // 'classic' | 'box'
+let exportScoreboardPosition = { v: 'top', h: 'left' };
+let exportCombined        = false;
 
 const _watermarkImg = new Image();
 _watermarkImg.src = 'img/icon.png';
 
-function selectEngine(e) {
-  exportEngine = e;
-  const wb = $('eng-webcodecs'), mr = $('eng-recorder');
-  if (wb) wb.classList.toggle('active', e === 'webcodecs');
-  if (mr) mr.classList.toggle('active', e === 'recorder');
-}
-
 function calcExportDur() {
+  if (exportCombined) {
+    const hlDur = clips.filter(c => c.end !== null && c.end > c.start && c.highlight)
+      .reduce((s, c) => s + (c.end - c.start), 0);
+    const allDur = clips.filter(c => c.end !== null && c.end > c.start)
+      .reduce((s, c) => s + (c.end - c.start), 0);
+    return hlDur + allDur;
+  }
   return clips
     .filter(c => c.end !== null && c.end > c.start && (!exportHighlightsOnly || c.highlight))
     .reduce((sum, c) => sum + (c.end - c.start), 0);
@@ -559,6 +554,41 @@ function selectDisableWatermark(on) {
   drawPreview();
 }
 
+function selectScoreboardStyle(style) {
+  exportScoreboardStyle = style;
+  ['classic', 'box'].forEach(s => {
+    const btn = $('sb-style-' + s);
+    if (btn) btn.classList.toggle('active', s === style);
+  });
+  const posWrap = $('sb-position-wrap');
+  if (posWrap) posWrap.style.display = style === 'box' ? '' : 'none';
+  drawPreview();
+}
+
+function selectScoreboardPosition(v, h) {
+  exportScoreboardPosition = { v, h };
+  ['tl','tc','tr','bl','bc','br'].forEach(id => {
+    const btn = $('sb-pos-' + id);
+    if (btn) btn.classList.toggle('active',
+      id === (v[0] + h[0]));
+  });
+  drawPreview();
+}
+
+function selectCombined(on) {
+  exportCombined = on;
+  const hCb  = $('opt-highlights');
+  const sbCb = $('opt-no-scoreboard');
+  if (hCb)  hCb.disabled  = on;
+  if (sbCb) sbCb.disabled = on;
+  const row1 = hCb  && hCb.closest('.opt-row');
+  const row2 = sbCb && sbCb.closest('.opt-row');
+  if (row1) row1.style.opacity = on ? '0.4' : '';
+  if (row2) row2.style.opacity = on ? '0.4' : '';
+  const durEl = $('meta-export-dur');
+  if (durEl) { const d = calcExportDur(); durEl.textContent = d > 0 ? fmtDur(d) : '—'; }
+}
+
 function drawPreview() {
   const canvas = $('preview-canvas');
   if (!canvas) return;
@@ -589,15 +619,15 @@ function drawPreview() {
     ctx.fillText('NO VIDEO LOADED', cW / 2, cH / 2);
   }
 
+  const _previewLogo = (!exportDisableWatermark && _watermarkImg.complete && _watermarkImg.naturalWidth) ? _watermarkImg : null;
   if (!exportDisableScoreboard) {
     const homeLabel = $('inp-home').value || 'Home';
     const awayLabel = $('inp-away').value || 'Away';
     const homeScore = clips.filter(c => c.type === 'home_point').length;
     const awayScore = clips.filter(c => c.type === 'away_point').length;
-    wcDrawScoreboard(ctx, cW, cH, homeLabel, awayLabel, homeScore, awayScore);
-  }
-  if (!exportDisableWatermark) {
-    wcDrawWatermark(ctx, cW, cH, _watermarkImg.complete && _watermarkImg.naturalWidth ? _watermarkImg : null);
+    wcDrawActiveScoreboard(ctx, cW, cH, homeLabel, awayLabel, homeScore, awayScore, undefined, undefined, undefined, _previewLogo);
+  } else if (_previewLogo) {
+    wcDrawWatermark(ctx, cW, cH, _previewLogo);
   }
 }
 
@@ -616,8 +646,7 @@ function getExportBitrate(w, h, fps) {
 }
 
 function doVideoExport() {
-  if (exportEngine === 'recorder') doMediaRecorderExport();
-  else doWebCodecsExport();
+  doWebCodecsExport();
 }
 
 function openExport() {
@@ -671,40 +700,40 @@ function openExport() {
     <div class="section-head" onclick="toggleExportSection('settings')">Export Options<svg class="section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="6 9 12 15 18 9"/></svg></div>
     <div class="export-settings-col">
       <div class="eng-label">Scoreboard Style</div>
-      <div class="sb-style-wrap">
-        <select class="sb-style-select" disabled>
-          <option>Classic</option>
-        </select>
-        <span class="soon-tag">Soon</span>
+      <div class="engine-toggle">
+        <button class="eng-btn ${exportScoreboardStyle === 'classic' ? 'active' : ''}" id="sb-style-classic" onclick="selectScoreboardStyle('classic')">Classic</button>
+        <button class="eng-btn ${exportScoreboardStyle === 'box'    ? 'active' : ''}" id="sb-style-box"    onclick="selectScoreboardStyle('box')">Box</button>
       </div>
     </div>
 
-    <div class="export-settings-row">
-      <div class="export-settings-col">
-        <div class="eng-label">Engine</div>
-        <div class="engine-toggle">
-          <button class="eng-btn ${exportEngine === 'webcodecs' ? 'active' : ''}" id="eng-webcodecs" onclick="selectEngine('webcodecs')">WebCodecs</button>
-          <button class="eng-btn ${exportEngine === 'recorder' ? 'active' : ''}" id="eng-recorder" onclick="selectEngine('recorder')">Recorder</button>
-        </div>
-      </div>
-      <div class="export-settings-col">
-        <div class="eng-label">Quality</div>
-        <div class="engine-toggle">
-          <button class="eng-btn ${exportQuality === 'low'    ? 'active' : ''}" id="q-low"    onclick="selectQuality('low')">Low</button>
-          <button class="eng-btn ${exportQuality === 'medium' ? 'active' : ''}" id="q-medium" onclick="selectQuality('medium')">Med</button>
-          <button class="eng-btn ${exportQuality === 'high'   ? 'active' : ''}" id="q-high"   onclick="selectQuality('high')">High</button>
-        </div>
+    <div class="export-settings-col" id="sb-position-wrap" style="${exportScoreboardStyle !== 'box' ? 'display:none' : ''}">
+      <div class="eng-label">Position</div>
+      <div class="sb-pos-grid">
+        ${[['top','left'],['top','center'],['top','right'],['bottom','left'],['bottom','center'],['bottom','right']].map(([v,h]) => {
+          const id = v[0] + h[0];
+          const active = exportScoreboardPosition.v === v && exportScoreboardPosition.h === h ? 'active' : '';
+          return `<button class="eng-btn ${active}" id="sb-pos-${id}" onclick="selectScoreboardPosition('${v}','${h}')"></button>`;
+        }).join('')}
       </div>
     </div>
 
-    <label class="opt-row" onclick="selectHighlightsOnly(!$('opt-highlights').checked)">
-      <input type="checkbox" id="opt-highlights" ${exportHighlightsOnly ? 'checked' : ''}
+    <div class="export-settings-col">
+      <div class="eng-label">Quality</div>
+      <div class="engine-toggle">
+        <button class="eng-btn ${exportQuality === 'low'    ? 'active' : ''}" id="q-low"    onclick="selectQuality('low')">Low</button>
+        <button class="eng-btn ${exportQuality === 'medium' ? 'active' : ''}" id="q-medium" onclick="selectQuality('medium')">Med</button>
+        <button class="eng-btn ${exportQuality === 'high'   ? 'active' : ''}" id="q-high"   onclick="selectQuality('high')">High</button>
+      </div>
+    </div>
+
+    <label class="opt-row" onclick="selectHighlightsOnly(!$('opt-highlights').checked)" style="${exportCombined ? 'opacity:0.4' : ''}">
+      <input type="checkbox" id="opt-highlights" ${exportHighlightsOnly ? 'checked' : ''} ${exportCombined ? 'disabled' : ''}
              onchange="selectHighlightsOnly(this.checked)" onclick="event.stopPropagation()">
       <span class="opt-row-label">Highlights only</span>
       <span class="opt-row-sub" id="opt-highlights-sub" style="${exportHighlightsOnly ? '' : 'display:none'}">${highlights} clip${highlights !== 1 ? 's' : ''}</span>
     </label>
-    <label class="opt-row" onclick="selectDisableScoreboard(!$('opt-no-scoreboard').checked)">
-      <input type="checkbox" id="opt-no-scoreboard" ${exportDisableScoreboard ? 'checked' : ''}
+    <label class="opt-row" onclick="selectDisableScoreboard(!$('opt-no-scoreboard').checked)" style="${exportCombined ? 'opacity:0.4' : ''}">
+      <input type="checkbox" id="opt-no-scoreboard" ${exportDisableScoreboard ? 'checked' : ''} ${exportCombined ? 'disabled' : ''}
              onchange="selectDisableScoreboard(this.checked)" onclick="event.stopPropagation()">
       <span class="opt-row-label">No scoreboard overlay</span>
     </label>
@@ -712,6 +741,12 @@ function openExport() {
       <input type="checkbox" id="opt-no-watermark" ${exportDisableWatermark ? 'checked' : ''}
              onchange="selectDisableWatermark(this.checked)" onclick="event.stopPropagation()">
       <span class="opt-row-label">No watermark</span>
+    </label>
+    <label class="opt-row" onclick="selectCombined(!$('opt-combined').checked)">
+      <input type="checkbox" id="opt-combined" ${exportCombined ? 'checked' : ''}
+             onchange="selectCombined(this.checked)" onclick="event.stopPropagation()">
+      <span class="opt-row-label">Combined export</span>
+      <span class="beta-tag">Beta</span>
     </label>
 
     <div class="export-dur-note"><span id="meta-export-dur">${exportDur > 0 ? fmtDur(exportDur) : '—'}</span> to export</div>
@@ -923,7 +958,6 @@ function doReset() {
   closeResetModal();
 
   // Close any open views first
-  editorVideo.pause();
   mainVideo.pause();
   editorView.classList.remove('open');
   closeMarks();
@@ -942,12 +976,11 @@ function doReset() {
   videoFile = null;
   videoLoaded = false;
 
+  videoArea.insertBefore(mainVideo, placeholder);
   mainVideo.removeAttribute('src');
   mainVideo.load();
   mainVideo.style.display = 'none';
-  editorVideo.removeAttribute('src');
-  editorVideo.load();
-  $('placeholder').style.display = '';
+  placeholder.style.display = '';
 
   // Clear team names
   $('inp-home').value = '';

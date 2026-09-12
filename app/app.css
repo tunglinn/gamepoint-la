@@ -95,7 +95,11 @@
       background: #0a0a0a; position: relative; overflow: hidden;
     }
 
-    #main-video { max-width: 100%; max-height: 100%; width: 100%; height: 100%; object-fit: contain; display: none; }
+    /* #shared-video is one <video> element reused for both the main preview and
+       the editor — it's reparented between #video-area and #editor-view (see
+       app.js) rather than duplicated, so these rules key off whichever
+       container currently holds it instead of a fixed ID. */
+    #video-area #shared-video { max-width: 100%; max-height: 100%; width: 100%; height: 100%; object-fit: contain; display: none; }
 
     #placeholder {
       display: flex; flex-direction: column; align-items: center; gap: 16px;
@@ -151,7 +155,7 @@
     }
     #editor-view.open { visibility: visible; opacity: 1; }
 
-    #editor-video {
+    #editor-view #shared-video {
       position: absolute; inset: 0;
       width: 100%; height: 100%; object-fit: contain;
     }
@@ -497,7 +501,8 @@
       background: var(--text); border-radius: var(--radius);
       padding: 8px 16px; color: #fff; text-align: center;
     }
-    .sb-heads { display: flex; justify-content: space-between; font-family: 'Barlow Condensed', sans-serif; font-size: 13px; font-weight: 700; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 2px; }
+    .sb-heads { display: flex; justify-content: space-between; gap: 8px; font-family: 'Barlow Condensed', sans-serif; font-size: 13px; font-weight: 700; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 2px; }
+    .sb-heads span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 48%; }
     .sb-score { font-family: 'Barlow Condensed', sans-serif; font-size: 40px; font-weight: 900; line-height: 1; letter-spacing: -2px; }
     .sb-score .sh { color: #82b4ff; }
     .sb-score .sa { color: #ff8a80; }
@@ -606,6 +611,9 @@
     .exp-meta-txt {
       font-size: 12px; color: var(--text3); text-align: center;
     }
+    .exp-debug-txt {
+      font-size: 11px; color: var(--text3); text-align: center; opacity: 0.6;
+    }
     .exp-cancel {
       align-self: center; background: none;
       border: 1.5px solid var(--border); border-radius: var(--radius-sm);
@@ -640,6 +648,25 @@
       display: flex; background: var(--surface); border-radius: var(--radius-sm);
       border: 1.5px solid var(--border); padding: 3px; gap: 3px;
     }
+    .sb-pos-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr);
+      background: var(--surface); border-radius: var(--radius-sm);
+      border: 1.5px solid var(--border); padding: 3px; gap: 3px;
+    }
+    .sb-pos-grid .eng-btn {
+      padding: 4px; height: 24px; display: flex;
+    }
+    .sb-pos-grid .eng-btn::after {
+      content: ''; width: 5px; height: 5px; border-radius: 50%;
+      background: var(--text3); flex-shrink: 0;
+    }
+    .sb-pos-grid .eng-btn.active::after { background: var(--text); }
+    .sb-pos-grid .eng-btn[id$="tl"] { align-items: flex-start; justify-content: flex-start; }
+    .sb-pos-grid .eng-btn[id$="tc"] { align-items: flex-start; justify-content: center; }
+    .sb-pos-grid .eng-btn[id$="tr"] { align-items: flex-start; justify-content: flex-end; }
+    .sb-pos-grid .eng-btn[id$="bl"] { align-items: flex-end;   justify-content: flex-start; }
+    .sb-pos-grid .eng-btn[id$="bc"] { align-items: flex-end;   justify-content: center; }
+    .sb-pos-grid .eng-btn[id$="br"] { align-items: flex-end;   justify-content: flex-end; }
     .eng-btn {
       flex: 1; padding: 7px; border-radius: 7px; border: none;
       font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 800;
