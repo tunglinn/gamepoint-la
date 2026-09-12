@@ -21,6 +21,7 @@ const {
   wcSerializeAvcC, wcSerializeHvcC,
   wcGetSamplesForClip,
   wcSplitNals, wcExtractAvcCFromChunk, wcAnnexBToAvcc,
+  wcParseBoxHeader, wcIsSkippableBoxType,
 } = require('../../app/export-utils.js');
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -480,5 +481,89 @@ describe('wcGetSamplesForClip', () => {
     const { frameSamples } = wcGetSamplesForClip(altSamples, { start: 0, end: 0.05 }, TS);
     // cts=0/600=0, cts=20/600≈0.033, cts=40/600≈0.067 → two samples ≤ 0.05+0.002
     expect(frameSamples.length).toBe(2);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// wcParseBoxHeader / wcIsSkippableBoxType — top-level ISO-BMFF box walking
+// ─────────────────────────────────────────────────────────────────────────────
+// Builds the raw bytes of a box header the same way a real MP4 file would
+// encode one: 4-byte big-endian size, 4-char ASCII type, and (when size===1)
+// an 8-byte big-endian 64-bit size immediately after.
+function boxHeaderBytes(size32, type, size64) {
+  const buf = new Uint8Array(size32 === 1 ? 16 : 8);
+  const view = new DataView(buf.buffer);
+  view.setUint32(0, size32, false);
+  for (let i = 0; i < 4; i++) buf[4 + i] = type.charCodeAt(i);
+  if (size32 === 1) {
+    view.setUint32(8, Math.floor(size64 / 4294967296), false);
+    view.setUint32(12, size64 >>> 0, false);
+  }
+  return buf;
+}
+
+describe('wcParseBoxHeader', () => {
+  it('decodes a normal 32-bit box size', () => {
+    const hdr = wcParseBoxHeader(boxHeaderBytes(32, 'moov'), 100, 10_000);
+    expect(hdr).toEqual({ type: 'moov', size: 32, headerLength: 8 });
+  });
+
+  it('decodes a 64-bit largesize (size field === 1)', () => {
+    const bigSize = 5_000_000_000; // > 2^32, forces the largesize path
+    const hdr = wcParseBoxHeader(boxHeaderBytes(1, 'mdat', bigSize), 1000, bigSize + 2000);
+    expect(hdr).toEqual({ type: 'mdat', size: bigSize, headerLength: 16 });
+  });
+
+  it('treats size === 0 as "extends to end of file"', () => {
+    const hdr = wcParseBoxHeader(boxHeaderBytes(0, 'mdat'), 100, 1000);
+    expect(hdr).toEqual({ type: 'mdat', size: 900, headerLength: 8 });
+  });
+
+  it('accepts a DataView as well as a Uint8Array', () => {
+    const bytes = boxHeaderBytes(32, 'ftyp');
+    const view = new DataView(bytes.buffer);
+    expect(wcParseBoxHeader(view, 0, 10_000)).toEqual({ type: 'ftyp', size: 32, headerLength: 8 });
+  });
+
+  it('returns null when the declared size is smaller than its own header', () => {
+    expect(wcParseBoxHeader(boxHeaderBytes(4, 'free'), 0, 10_000)).toBeNull();
+  });
+
+  it('returns null when fewer than 8 bytes are available', () => {
+    expect(wcParseBoxHeader(new Uint8Array(4), 0, 10_000)).toBeNull();
+  });
+
+  it('returns null when size===1 but fewer than 16 bytes are available (truncated largesize)', () => {
+    const truncated = boxHeaderBytes(1, 'mdat', 5_000_000_000).slice(0, 12);
+    expect(wcParseBoxHeader(truncated, 0, 10_000)).toBeNull();
+  });
+});
+
+describe('wcIsSkippableBoxType', () => {
+  it('flags only mdat as skippable (header-only feed)', () => {
+    // mdat is the one box type MP4Box.js will accept header-only, trusting
+    // the declared size to skip its (possibly gigabytes-large) content.
+    expect(wcIsSkippableBoxType('mdat')).toBe(true);
+  });
+
+  it('treats free/skip/wide as not skippable (fed in full)', () => {
+    // Empirically, MP4Box.js does NOT extend the same header-only trust to
+    // these — it expects their full declared bytes before advancing past
+    // them. They're always small in practice (reserve/padding space), so
+    // feeding them in full is cheap and safe.
+    expect(wcIsSkippableBoxType('free')).toBe(false);
+    expect(wcIsSkippableBoxType('skip')).toBe(false);
+    expect(wcIsSkippableBoxType('wide')).toBe(false);
+  });
+
+  it('treats metadata boxes as not skippable (fed in full)', () => {
+    expect(wcIsSkippableBoxType('ftyp')).toBe(false);
+    expect(wcIsSkippableBoxType('moov')).toBe(false);
+    expect(wcIsSkippableBoxType('moof')).toBe(false);
+    expect(wcIsSkippableBoxType('sidx')).toBe(false);
+  });
+
+  it('defaults unrecognized box types to not skippable', () => {
+    expect(wcIsSkippableBoxType('xyz1')).toBe(false);
   });
 });

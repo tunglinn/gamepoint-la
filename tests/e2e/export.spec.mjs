@@ -26,8 +26,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // Helper: generate a minimal valid H.264 MP4 entirely inside the browser.
 // Returns the MP4 as a Uint8Array. Takes ~200 ms on a typical desktop.
 // ─────────────────────────────────────────────────────────────────────────────
-async function generateTestMp4(page) {
-  return page.evaluate(async () => {
+async function generateTestMp4(page, { fastStart = 'in-memory' } = {}) {
+  return page.evaluate(async ({ fastStart }) => {
     // Encode 30 frames (1 second at 30 fps) of a solid-colour animation.
     // Each frame alternates between red and blue so the output is visually
     // distinguishable from an all-black or all-transparent stream.
@@ -43,7 +43,7 @@ async function generateTestMp4(page) {
     const muxer = new Muxer({
       target: new ArrayBufferTarget(),
       video: { codec: 'avc', width: WIDTH, height: HEIGHT },
-      fastStart: 'in-memory',
+      fastStart,
       firstTimestampBehavior: 'offset',
     });
 
@@ -78,14 +78,141 @@ async function generateTestMp4(page) {
     encoder.close();
     muxer.finalize();
     return new Uint8Array(muxer.target.buffer);
+  }, { fastStart });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: build a synthetic H.264 MP4 with a >1KB 'free' padding box spliced
+// between ftyp and mdat, with moov left at the end (classic camera-recording
+// layout otherwise). This reproduces the box layout that broke the app's
+// previous fixed-1KB-preamble MP4 parser: a real editing/export tool
+// inserting a thumbnail or reserve box between ftyp and mdat pushes mdat's
+// header past the byte-1024 cutoff that parser assumed was always enough to
+// reach moov, causing MP4Box's onReady to silently never fire and the app to
+// report "No video track found" on a file that plainly has one.
+//
+// Built by muxing normally (fastStart:false, so mp4-muxer produces a correct,
+// well-tested ftyp+mdat+samples+moov-at-end file) and then splicing in the
+// padding box, patching only the stco/co64 chunk-offset table (the one place
+// in moov that stores an absolute file offset) to account for the shift.
+// Everything else in the file is untouched, byte-for-byte, from mp4-muxer's
+// own output.
+// ─────────────────────────────────────────────────────────────────────────────
+async function generatePaddedTestMp4(page) {
+  return page.evaluate(async () => {
+    const WIDTH = 320, HEIGHT = 240, FPS = 30, FRAMES = 30;
+    const { Muxer, ArrayBufferTarget } = await import(
+      'https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/+esm'
+    );
+
+    const muxer = new Muxer({
+      target: new ArrayBufferTarget(),
+      video: { codec: 'avc', width: WIDTH, height: HEIGHT },
+      fastStart: false,
+      firstTimestampBehavior: 'offset',
+    });
+    const encoder = new VideoEncoder({
+      output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+      error: e => { throw e; },
+    });
+    encoder.configure({
+      codec: 'avc1.640028',
+      width: WIDTH, height: HEIGHT,
+      bitrate: 1_000_000,
+      framerate: FPS,
+    });
+
+    const canvas = new OffscreenCanvas(WIDTH, HEIGHT);
+    const ctx = canvas.getContext('2d');
+    for (let i = 0; i < FRAMES; i++) {
+      ctx.fillStyle = i % 2 === 0 ? '#ff4444' : '#4444ff';
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '20px sans-serif';
+      ctx.fillText(`frame ${i}`, 10, 30);
+      const vf = new VideoFrame(canvas, { timestamp: Math.round(i * 1_000_000 / FPS) });
+      encoder.encode(vf, { keyFrame: i === 0 });
+      vf.close();
+    }
+    await encoder.flush();
+    encoder.close();
+    muxer.finalize();
+
+    const original = new Uint8Array(muxer.target.buffer);
+    const origView = new DataView(original.buffer);
+
+    // Locate moov by requiring it to end exactly at EOF — fastStart:false
+    // always places moov last, and this identity is astronomically unlikely
+    // to be satisfied by a coincidental 'moov'-looking byte sequence inside
+    // mdat's compressed (effectively random) sample data.
+    let moovStart = -1, moovSize = 0;
+    for (let i = 4; i <= original.length - 4; i++) {
+      if (original[i] === 0x6d && original[i + 1] === 0x6f && original[i + 2] === 0x6f && original[i + 3] === 0x76) { // 'moov'
+        const candStart = i - 4;
+        const declaredSize = origView.getUint32(candStart, false);
+        if (candStart + declaredSize === original.length) { moovStart = candStart; moovSize = declaredSize; break; }
+      }
+    }
+    if (moovStart === -1) throw new Error('test fixture: could not locate moov box');
+
+    // Locate stco/co64 — searched only within moov's own byte range, never
+    // in mdat — and validated by requiring its declared size to exactly
+    // match "header + entryCount * entrySize" (real random bytes essentially
+    // never satisfy this arithmetic identity by coincidence).
+    const findChunkOffsetBox = (fourCC, entrySize) => {
+      const needle = [...fourCC].map(c => c.charCodeAt(0));
+      for (let i = moovStart + 4; i <= moovStart + moovSize - 4; i++) {
+        if (original[i] === needle[0] && original[i + 1] === needle[1] && original[i + 2] === needle[2] && original[i + 3] === needle[3]) {
+          const boxStart = i - 4;
+          const declaredSize = origView.getUint32(boxStart, false);
+          const entryCount = origView.getUint32(i + 8, false); // +4 type, +4 version/flags
+          if (declaredSize === 16 + entryCount * entrySize && boxStart + declaredSize <= moovStart + moovSize) {
+            return { contentStart: i + 12, entryCount }; // +4 type, +4 version/flags, +4 entry_count
+          }
+        }
+      }
+      return null;
+    };
+    let chunkOffsets = findChunkOffsetBox('stco', 4);
+    let entrySize = 4;
+    if (!chunkOffsets) { chunkOffsets = findChunkOffsetBox('co64', 8); entrySize = 8; }
+    if (!chunkOffsets) throw new Error('test fixture: could not locate stco/co64 box');
+
+    // Splice a >1KB 'free' box in right after ftyp.
+    const ftypSize = origView.getUint32(0, false); // ftyp is always the first box
+    const PAD = 2000;
+    const spliced = new Uint8Array(original.length + PAD);
+    spliced.set(original.subarray(0, ftypSize), 0);
+    new DataView(spliced.buffer, ftypSize, 8).setUint32(0, PAD, false);
+    spliced.set([0x66, 0x72, 0x65, 0x65], ftypSize + 4); // 'free'
+    spliced.set(original.subarray(ftypSize), ftypSize + PAD);
+
+    // Every stco/co64 entry records an absolute file offset into mdat, which
+    // just moved by PAD bytes — patch each one in place (same field
+    // position, shifted by PAD since it lives after ftyp).
+    const splicedView = new DataView(spliced.buffer);
+    for (let k = 0; k < chunkOffsets.entryCount; k++) {
+      const origPos = chunkOffsets.contentStart + k * entrySize;
+      const newPos = origPos + PAD;
+      if (entrySize === 4) {
+        splicedView.setUint32(newPos, origView.getUint32(origPos, false) + PAD, false);
+      } else {
+        const hi = origView.getUint32(origPos, false), lo = origView.getUint32(origPos + 4, false);
+        const val = hi * 4294967296 + lo + PAD;
+        splicedView.setUint32(newPos, Math.floor(val / 4294967296), false);
+        splicedView.setUint32(newPos + 4, val >>> 0, false);
+      }
+    }
+
+    return spliced;
   });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: load the synthetic MP4 into the app's file picker.
 // ─────────────────────────────────────────────────────────────────────────────
-async function loadVideoIntoApp(page) {
-  const mp4Bytes = await generateTestMp4(page);
+async function loadVideoIntoApp(page, opts = {}) {
+  const mp4Bytes = opts.bytes ? opts.bytes : await generateTestMp4(page, opts);
 
   // Set the file on the hidden <input type="file"> element by writing the
   // bytes as a Buffer — Playwright converts it to a File object for us.
@@ -275,4 +402,59 @@ test('exported frames are not all black', async ({ page }) => {
   }, exportedBytes.toString('base64'));
 
   expect(hasNonBlackPixels).toBe(true);
+});
+
+test('export succeeds when the loaded video is a fragmented MP4 (moof/mdat)', async ({ page }) => {
+  // Mobile exports use fastStart:'fragmented' (moof/mdat streaming layout)
+  // to avoid the JS-heap blowup ArrayBufferTarget causes on phones. This
+  // guards against re-loading one of your own mobile-exported clips for
+  // further trimming/combining — the input parser must be able to read
+  // fragmented MP4s, not just the classic flat moov+mdat layout.
+  await loadVideoIntoApp(page, { fastStart: 'fragmented' });
+  await page.locator('#nav-editor').click();
+  await addClipViaApi(page, 0.1, 0.8);
+  await page.locator('#editor-view').press('Escape');
+  await page.locator('#nav-export').click();
+
+  const [download] = await Promise.all([
+    page.waitForEvent('download', { timeout: 60_000 }),
+    page.locator('button:has-text("Export Video")').click(),
+  ]);
+
+  const stream = await download.createReadStream();
+  const chunks = [];
+  for await (const chunk of stream) chunks.push(chunk);
+  const bytes = Buffer.concat(chunks);
+
+  expect(bytes.length).toBeGreaterThan(1000);
+  expect(bytes.slice(4, 8).toString('ascii')).toBe('ftyp');
+});
+
+test('export succeeds when mdat is preceded by a large padding box (moov-at-end)', async ({ page }) => {
+  // Direct regression test for the "No video track found in file" bug: some
+  // editing/export tools insert a thumbnail or reserve box between ftyp and
+  // mdat. The app's previous MP4 parser fed MP4Box.js a fixed first-1024-raw-
+  // bytes "preamble" assuming that was always enough to reach mdat's header;
+  // enough padding pushed mdat's header past that cutoff, so MP4Box.js could
+  // never locate moov and the app reported no video track on a file that
+  // plainly had one. See generatePaddedTestMp4 for exactly how this is built.
+  const paddedBytes = await generatePaddedTestMp4(page);
+  await loadVideoIntoApp(page, { bytes: paddedBytes });
+  await page.locator('#nav-editor').click();
+  await addClipViaApi(page, 0.1, 0.8);
+  await page.locator('#editor-view').press('Escape');
+  await page.locator('#nav-export').click();
+
+  const [download] = await Promise.all([
+    page.waitForEvent('download', { timeout: 60_000 }),
+    page.locator('button:has-text("Export Video")').click(),
+  ]);
+
+  const stream = await download.createReadStream();
+  const chunks = [];
+  for await (const chunk of stream) chunks.push(chunk);
+  const bytes = Buffer.concat(chunks);
+
+  expect(bytes.length).toBeGreaterThan(1000);
+  expect(bytes.slice(4, 8).toString('ascii')).toBe('ftyp');
 });

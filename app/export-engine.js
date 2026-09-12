@@ -132,7 +132,19 @@ async function doWebCodecsExport() {
     // ⚠ WARNING: Math.round turns 29.97 fps into 30 fps. This ~0.1% mismatch
     // between the encoder's declared fps and the real frame spacing causes
     // slight A/V sync drift on long exports.
-    const fps = Math.round(videoTrack.nb_samples / (videoTrack.duration / timescale));
+    let fps = Math.round(videoTrack.nb_samples / (videoTrack.duration / timescale));
+    if (!Number.isFinite(fps) || fps <= 0) {
+      // Fragmented files don't know their total sample count/duration until
+      // every moof fragment has been read — the initial moov (where
+      // videoTrack.nb_samples/duration come from) reports 0 for both even
+      // though videoSamples is already fully and correctly populated by
+      // wcParseMp4. Derive fps from the sample table itself instead.
+      const vs = videoSamples;
+      const tsFor = s => s.timescale || timescale;
+      const span = vs.length > 1 ? (vs[vs.length - 1].dts / tsFor(vs[vs.length - 1])) - (vs[0].dts / tsFor(vs[0])) : 0;
+      fps = span > 0 ? Math.round((vs.length - 1) / span) : 30; // 30fps last-resort default
+      console.warn(`[WC] track fps metadata unreliable (nb_samples=${videoTrack.nb_samples}, duration=${videoTrack.duration}) — derived fps=${fps} from sample table`);
+    }
 
     // MP4 tkhd box contains a 3×3 affine matrix (stored as 9 16.16 fixed-point values)
     // that tells the player how to rotate the frame for display. iPhones in particular
@@ -1359,28 +1371,36 @@ function wcDrawActiveScoreboard(ctx, w, h, homeTeam, awayTeam, homeScore, awaySc
 
 // Scan the file's top-level box headers (8 bytes each) to locate moov without
 // reading any mdat content.  For a 1.6 GB file this reads ~48 bytes total.
-async function wcFindMoov(file) {
-  let offset = 0;
-  while (offset + 8 <= file.size) {
-    const hdr = new DataView(await file.slice(offset, Math.min(offset + 16, file.size)).arrayBuffer());
-    let size = hdr.getUint32(0, false);
-    const type = String.fromCharCode(hdr.getUint8(4), hdr.getUint8(5), hdr.getUint8(6), hdr.getUint8(7));
-    if (size === 1) {
-      // 64-bit extended size stored in the next 8 bytes
-      size = hdr.getUint32(8, false) * 4294967296 + hdr.getUint32(12, false);
-    } else if (size === 0) {
-      size = file.size - offset; // box extends to EOF
-    }
-    if (type === 'moov') return { start: offset, size };
-    if (size < 8) { console.warn('[WC] wcFindMoov: bad box size', size, 'at offset', offset); break; }
-    offset += size;
-  }
-  return null;
-}
+// Metadata boxes (ftyp, moov, and — for fragmented files — moof) are always
+// small in practice. A declared size beyond this is treated as a corrupt or
+// pathological file rather than trusted outright, so a single bad box can't
+// force one giant allocation.
+const WC_MAX_METADATA_BOX_SIZE = 100 * 1024 * 1024; // 100 MB
 
-// Parses only the moov box to build a sample table (timestamps, offsets, sizes).
-// No mdat is read, so sample.data is null for every entry — Part 2 will fetch
-// sample bytes on demand per clip.
+// Parses top-level boxes to build a sample table (timestamps, offsets, sizes).
+//
+// Walks the file box-by-box from offset 0 instead of assuming a fixed layout.
+// mdat — the one box MP4Box.js will accept header-only, per wcIsSkippableBoxType
+// — is skipped via its header alone, so its body is never read, keeping this
+// cheap even for a multi-GB mdat. Every other box (ftyp, moov, free/skip/wide
+// padding boxes, and moof for fragmented files) is fed to MP4Box.js in full —
+// those are all small in practice, and MP4Box.js needs their real content (or,
+// for ftyp/free/skip/wide, simply doesn't support header-only skipping the way
+// it does for mdat). For an ordinary (non-fragmented) file the walk
+// stops as soon as moov is parsed — same fast path as before. For a
+// fragmented file (mvex present in moov) the walk continues past moov to
+// EOF, feeding every moof box in full so MP4Box builds the sample table from
+// trun/tfhd instead of stbl.
+//
+// This replaces an earlier version that fed MP4Box a fixed ~1KB "preamble"
+// guessed to contain ftyp + one mdat's header. Real editing/export tools
+// routinely insert padding or thumbnail boxes between ftyp and mdat, which
+// silently broke that assumption: onReady would never fire, and wcParseMp4
+// would resolve with videoTrack:null, surfacing as a misleading
+// "No video track found" error on files that plainly had one.
+//
+// No mdat content is ever read here — sample bytes are fetched later, on
+// demand per clip, in doWebCodecsExport.
 async function wcParseMp4(_url, file) {
   const wcMem = () => {
     if (!performance.memory) return '';
@@ -1389,58 +1409,83 @@ async function wcParseMp4(_url, file) {
   };
 
   console.log(`[WC] wcParseMp4 start${wcMem()}`);
-  const moovInfo = await wcFindMoov(file);
-  if (!moovInfo) throw new Error('moov box not found — file may be corrupt or in an unsupported format');
-  console.log(`[WC] moov offset=${(moovInfo.start/1048576).toFixed(0)}MB size=${(moovInfo.size/1048576).toFixed(1)}MB${wcMem()}`);
+
+  const mp4file = MP4Box.createFile();
+  const result = { videoTrack: null, audioTrack: null, videoSamples: [], audioSamples: [], mp4file, moovBuf: null };
+  let isFragmented = false;
+
+  mp4file.onReady = info => {
+    result.videoTrack = info.videoTracks[0] || null;
+    result.audioTrack = info.audioTracks[0] || null;
+    // mvex ("movie extends") inside moov is the ISO-BMFF signal that sample
+    // data lives in moof/mdat fragments rather than moov's own stbl.
+    isFragmented = !!(mp4file.moov && mp4file.moov.mvex);
+    console.log(`[WC] onReady — video=${!!result.videoTrack} (nb_samples=${info.videoTracks[0]?.nb_samples}) audio=${!!result.audioTrack} fragmented=${isFragmented}${wcMem()}`);
+
+    // setExtractionOptions + start() causes MP4Box to call buildSampleLists internally,
+    // populating trak.samples with per-sample dts/cts/is_sync/offset/size from the
+    // stts/stss/stco/stsz boxes in moov (or, for fragmented files, from trun/tfhd as
+    // each moof is fed below). No mdat is fed so data stays null.
+    if (result.videoTrack)
+      mp4file.setExtractionOptions(result.videoTrack.id, null, { nbSamples: Infinity });
+    if (result.audioTrack)
+      mp4file.setExtractionOptions(result.audioTrack.id, null, { nbSamples: Infinity });
+    mp4file.start();
+
+    if (result.videoTrack)
+      result.videoSamples = mp4file.getTrackById(result.videoTrack.id)?.samples ?? [];
+    if (result.audioTrack)
+      result.audioSamples = mp4file.getTrackById(result.audioTrack.id)?.samples ?? [];
+  };
+
+  mp4file.onSamples = () => {}; // no mdat fed — should never fire
 
   return new Promise(async (resolve, reject) => {
-    const mp4file = MP4Box.createFile();
-    const result = { videoTrack: null, audioTrack: null, videoSamples: [], audioSamples: [], mp4file, moovBuf: null };
-
-    mp4file.onReady = info => {
-      result.videoTrack = info.videoTracks[0] || null;
-      result.audioTrack = info.audioTracks[0] || null;
-      console.log(`[WC] onReady — video=${!!result.videoTrack} (nb_samples=${info.videoTracks[0]?.nb_samples}) audio=${!!result.audioTrack}${wcMem()}`);
-
-      // setExtractionOptions + start() causes MP4Box to call buildSampleLists internally,
-      // populating trak.samples with per-sample dts/cts/is_sync/offset/size from the
-      // stts/stss/stco/stsz boxes in moov.  No mdat is fed so data stays null.
-      if (result.videoTrack)
-        mp4file.setExtractionOptions(result.videoTrack.id, null, { nbSamples: Infinity });
-      if (result.audioTrack)
-        mp4file.setExtractionOptions(result.audioTrack.id, null, { nbSamples: Infinity });
-      mp4file.start();
-
-      if (result.videoTrack)
-        result.videoSamples = mp4file.getTrackById(result.videoTrack.id)?.samples ?? [];
-      if (result.audioTrack)
-        result.audioSamples = mp4file.getTrackById(result.audioTrack.id)?.samples ?? [];
-    };
-
-    mp4file.onSamples = () => {}; // no mdat fed — should never fire
     mp4file.onError = reject;
 
     try {
-      // MP4Box processes buffers in file order (by fileStart), not feeding order.
-      // Feeding moov alone (at fileStart=moovInfo.start) just pre-loads it; the
-      // sequential parser starts at offset 0 and won't reach moov until it advances.
-      // Feeding the first 1 KB gives MP4Box the ftyp box + the 8-byte mdat box header.
-      // The mdat header encodes the full mdat size, so the parser advances by that size
-      // and lands exactly at moovInfo.start — no mdat content needed.
-      if (moovInfo.start > 0) {
-        const preamble = await file.slice(0, Math.min(1024, moovInfo.start)).arrayBuffer();
-        preamble.fileStart = 0;
-        mp4file.appendBuffer(preamble);
+      let offset = 0;
+      let moovFound = false;
+      let boxCount = 0;
+      while (offset + 8 <= file.size) {
+        const headerBuf = await wcReadFileRangeWithRetry(file, offset, Math.min(offset + 16, file.size));
+        const hdr = wcParseBoxHeader(new Uint8Array(headerBuf), offset, file.size);
+        if (!hdr) { console.warn('[WC] wcParseMp4: bad box size at offset', offset); break; }
+
+        if (wcIsSkippableBoxType(hdr.type)) {
+          // Feed only the header — MP4Box needs it purely to know where the
+          // box ends. Its (possibly gigabytes-large) content is never read.
+          const headerOnly = headerBuf.slice(0, hdr.headerLength);
+          headerOnly.fileStart = offset;
+          mp4file.appendBuffer(headerOnly);
+        } else {
+          if (hdr.size > WC_MAX_METADATA_BOX_SIZE) {
+            throw new Error(`MP4 '${hdr.type}' box at offset ${offset} declares ${(hdr.size/1048576).toFixed(0)}MB — refusing to load a metadata box that large (the file may be corrupt).`);
+          }
+          const boxBuf = await wcReadFileRangeWithRetry(file, offset, offset + hdr.size);
+          boxBuf.fileStart = offset;
+          mp4file.appendBuffer(boxBuf); // onReady fires synchronously here for moov
+
+          if (hdr.type === 'moov') {
+            result.moovBuf = boxBuf; // needed later by the avcC/hvcC raw-scan fallback
+            moovFound = true;
+            console.log(`[WC] moov offset=${(offset/1048576).toFixed(0)}MB size=${(hdr.size/1048576).toFixed(1)}MB${wcMem()}`);
+            await wcYield(); // let onReady + start() settle
+            if (!isFragmented) break; // fast path: ordinary files need nothing past moov
+          }
+        }
+
+        offset += hdr.size;
+        boxCount++;
+        if (moovFound && boxCount % 200 === 0) await wcYield(); // cooperative yield while walking fragments
       }
 
-      result.moovBuf = await file.slice(moovInfo.start, moovInfo.start + moovInfo.size).arrayBuffer();
-      result.moovBuf.fileStart = moovInfo.start;
-      mp4file.appendBuffer(result.moovBuf); // onReady fires synchronously here
+      if (!moovFound) throw new Error('moov box not found — file may be corrupt or in an unsupported format');
 
-      await new Promise(r => setTimeout(r, 0)); // let onReady + start() settle
       mp4file.flush();
 
-      // Access sample table built from moov's stts/stss/stco/stsz boxes.
+      // Access sample table built from moov's stts/stss/stco/stsz boxes (or,
+      // for fragmented files, accumulated from each moof's trun/tfhd above).
       // Each sample has dts/cts/is_sync/offset/size — data is null (no mdat fed).
       if (result.videoTrack)
         result.videoSamples = mp4file.getTrackById(result.videoTrack.id)?.samples ?? [];
