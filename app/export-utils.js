@@ -149,6 +149,61 @@ function wcGetSamplesForClip(allSamples, clip, timescale) {
   return { clip, allSamples: allSamplesForClip, frameSamples };
 }
 
+// Decode a single top-level ISO-BMFF box header from raw bytes.
+//
+// `bytes` must contain at least the first 16 bytes of the box (fewer is fine
+// only if the file itself has fewer bytes left — see the EOF-size case below),
+// starting at relative offset 0, where absolute file position `boxStart` is
+// bytes[0]. Handles the two size-field special cases the spec defines:
+//   size === 1  → the real 64-bit size follows immediately as bytes 8-15.
+//   size === 0  → box extends to the end of the file (only valid for the
+//                 last box in the file — callers should treat a size===0
+//                 box that isn't last as a sign of a non-compliant muxer).
+// Returns null if the box is malformed (declared size smaller than its own
+// header) so callers can bail out the same way a bad box size always has.
+function wcParseBoxHeader(bytes, boxStart, fileSize) {
+  if (bytes.byteLength < 8) return null;
+  const view = bytes instanceof DataView ? bytes : new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let size = view.getUint32(0, false);
+  const type = String.fromCharCode(view.getUint8(4), view.getUint8(5), view.getUint8(6), view.getUint8(7));
+  let headerLength = 8;
+  if (size === 1) {
+    if (bytes.byteLength < 16) return null;
+    // 64-bit extended size. Precision loss above 2^53 bytes (~9 PB) is not a
+    // practical concern for video files.
+    size = view.getUint32(8, false) * 4294967296 + view.getUint32(12, false);
+    headerLength = 16;
+  } else if (size === 0) {
+    size = fileSize - boxStart;
+  }
+  if (size < headerLength) return null;
+  return { type, size, headerLength };
+}
+
+// Boxes whose *content* we never need to actually parse — only their header,
+// so we know how many bytes to skip to reach the next box.
+//
+// Only 'mdat' qualifies. It's the one box type MP4Box.js is built to accept
+// header-only (trusting the declared size to skip its content) since it's
+// routinely gigabytes and the whole reason this box-walking approach exists
+// is to avoid reading that content into memory. Other content-only boxes
+// like 'free'/'skip'/'wide' do NOT get the same treatment: empirically,
+// MP4Box.js expects their full declared bytes to be fed before it will
+// advance past them — feeding just a header (like a coincidental 'free' box
+// sitting between ftyp and mdat, e.g. a reserve/padding box some editing
+// tools insert) leaves it stuck waiting and desyncs the next box it reads.
+// That's fine in practice: free/skip/wide boxes exist specifically as small
+// reserve/padding space and are never gigabytes, so feeding them in full
+// (like any other metadata box) is cheap and safe. See WC_MAX_METADATA_BOX_SIZE
+// in export-engine.js for the backstop against an unexpectedly huge one.
+//
+// Everything not 'mdat' is fed to MP4Box in full — including box types we
+// don't recognize, since an unrecognized type is far more likely to be small
+// metadata than a giant payload.
+function wcIsSkippableBoxType(type) {
+  return type === 'mdat';
+}
+
 // Scan a raw MP4 ArrayBuffer for a box by 4-char type code and return its content
 // bytes (everything after the 8-byte size+type header), or null if not found.
 //
@@ -276,5 +331,6 @@ if (typeof module !== 'undefined' && module.exports) {
     fmt, fmtDur, wcYield, wcFmtSize,
     wcPickH264Codec, wcSerializeAvcC, wcSerializeHvcC, wcGetSamplesForClip,
     wcExtractRawBox, wcSplitNals, wcExtractAvcCFromChunk, wcAnnexBToAvcc,
+    wcParseBoxHeader, wcIsSkippableBoxType,
   };
 }
