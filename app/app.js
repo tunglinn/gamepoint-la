@@ -75,6 +75,7 @@ fileInput.addEventListener('change', e => {
     retryExportAfterReopen = false;
     doVideoExport();
   }
+  mcCheckForResume(file);
 });
 
 $('video-area').addEventListener('click', () => {
@@ -353,6 +354,7 @@ function saveHistory() {
   history.push(JSON.parse(JSON.stringify(clips)));
   histIdx = history.length - 1;
   updateUndoRedo();
+  mcScheduleAutosave();
 }
 
 function undo() {
@@ -364,6 +366,7 @@ function undo() {
   updateUndoRedo();
   updateScore();
   if (marksModal.classList.contains('open')) renderMarks();
+  mcScheduleAutosave();
   // toast('Undo ↩');
 }
 
@@ -374,6 +377,7 @@ function redo() {
   updateUndoRedo();
   updateScore();
   if (marksModal.classList.contains('open')) renderMarks();
+  mcScheduleAutosave();
   // toast('Redo ↪');
 }
 
@@ -817,11 +821,11 @@ function closePanel(id) { $(id).classList.remove('open'); }
 // ════════════════════════════════════════════════════
 
 let snackTimer;
-function toast(msg) {
+function toast(msg, ms = 2200) {
   snack.textContent = msg;
   snack.classList.add('show');
   clearTimeout(snackTimer);
-  snackTimer = setTimeout(() => snack.classList.remove('show'), 2200);
+  snackTimer = setTimeout(() => snack.classList.remove('show'), ms);
 }
 
 // ════════════════════════════════════════════════════
@@ -971,6 +975,10 @@ function doReset() {
   histIdx = 0;
   clipSeq = 0;
 
+  // Marker cache: intentionally starting over, so forget any autosaved
+  // session for this video rather than leaving it to resurface later.
+  if (videoFile) mcDeleteProject(mcFingerprint(videoFile));
+
   // Release video
   if (videoSrc) { URL.revokeObjectURL(videoSrc); videoSrc = ''; }
   videoFile = null;
@@ -995,6 +1003,64 @@ function doReset() {
   syncProgress();
 
   toast('Reset complete');
+}
+
+// ════════════════════════════════════════════════════
+//  MARKER CACHE
+//  Autosaves clips/team names into IndexedDB (see marker-cache.js and
+//  marker-cache-utils.js) so a reload/crash doesn't lose in-progress
+//  marking. This is separate from Save Markers/Import (doExport()/
+//  applyImport() above), which are the user-driven, cross-device JSON
+//  file flow — this is the automatic, same-device safety net.
+// ════════════════════════════════════════════════════
+
+// Debounced so rapid-fire marking (several rallies in a row) coalesces into
+// one write instead of one per mark.
+let mcWarnedUnavailable = false; // only nag once per page load, not per mark
+const mcScheduleAutosave = mcDebounce(async () => {
+  if (!videoFile) return;
+  const saved = await mcSaveProject(mcBuildEnvelope({
+    videoFingerprint: mcFingerprint(videoFile),
+    homeTeam: $('inp-home').value || 'Home',
+    awayTeam: $('inp-away').value || 'Away',
+    clips,
+  }));
+  // Autosave couldn't write (private browsing, storage full/disabled, etc.)
+  // — tell the user once so they know to fall back to manually downloading
+  // their marks instead of assuming they're safe.
+  if (!saved && !mcWarnedUnavailable) {
+    mcWarnedUnavailable = true;
+    toast('Autosave unavailable — use Save Markers', 5000);
+  }
+}, 400);
+
+let pendingResume = null;
+
+// Called right after a video is picked (see the file-input change listener
+// above). If a cached session exists for this exact file, offer to resume it
+// — but only into an empty editor, so this never clobbers marks already in
+// progress (e.g. re-picking the same file after Import).
+function mcCheckForResume(file) {
+  mcGetProject(mcFingerprint(file)).then(data => {
+    if (!data || !Array.isArray(data.clips) || data.clips.length === 0) return;
+    if (clips.length > 0 || activeClip) return;
+    pendingResume = data;
+    $('resume-marker-count').textContent = data.clips.length;
+    $('resume-filename').textContent = file.name;
+    $('resume-modal').classList.add('open');
+  }).catch(() => {}); // cache errors must never block editing
+}
+
+function closeResumeModal() {
+  $('resume-modal').classList.remove('open');
+  pendingResume = null;
+}
+
+function confirmResume() {
+  if (!pendingResume) return;
+  const data = pendingResume;
+  closeResumeModal();
+  applyImport(data);
 }
 
 // Init

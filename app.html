@@ -19,6 +19,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700;800;900&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/mp4box@0.5.2/dist/mp4box.all.min.js"></script>
   <script src="app/export-utils.js?v=2"></script>
+  <script src="app/marker-cache-utils.js"></script>
   <link rel="stylesheet" href="app/app.css">
 </head>
 <body>
@@ -216,6 +217,24 @@
   </div>
 </div>
 
+<!-- Resume Session Modal -->
+<div id="resume-modal">
+  <div class="reset-backdrop" onclick="closeResumeModal()"></div>
+  <div class="reset-card">
+    <div class="reset-icon" style="background:#E8F0FE">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#1A73E8" stroke-width="2.2"><path d="M3 12a9 9 0 1 0 9-9"/><polyline points="3 4 3 12 11 12"/></svg>
+    </div>
+    <div class="reset-title">Resume Previous Session?</div>
+    <div class="reset-msg">
+      Found <strong id="resume-marker-count"></strong> saved marker(s) for <em id="resume-filename" style="word-break:break-all"></em> from an earlier session.
+    </div>
+    <div class="reset-btns">
+      <button class="reset-btn cancel" onclick="closeResumeModal()">Start Fresh</button>
+      <button class="reset-btn confirm" style="background:var(--home)" onclick="confirmResume()">Resume</button>
+    </div>
+  </div>
+</div>
+
 <!-- Reset Confirm Modal -->
 <div id="reset-modal">
   <div class="reset-backdrop" onclick="closeResetModal()"></div>
@@ -238,6 +257,7 @@
 <script src="app/analytics.js"></script>
 <script>trackEvent('page_view');</script>
 <script src="app/export-engine.js"></script>
+<script src="app/marker-cache.js"></script>
 <script src="app/app.js"></script>
 </body>
 </html>
