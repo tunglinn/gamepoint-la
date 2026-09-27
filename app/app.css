@@ -558,14 +558,14 @@
     .header-btn svg { width: 15px; height: 15px; stroke-width: 2.2; }
 
     /* Reset confirm modal */
-    #reset-modal, #import-modal {
+    #reset-modal, #import-modal, #resume-modal {
       position: fixed; inset: 0; z-index: 400;
       display: flex; align-items: center; justify-content: center;
       padding: 24px;
       visibility: hidden; opacity: 0;
       transition: opacity 0.18s ease, visibility 0.18s;
     }
-    #reset-modal.open, #import-modal.open { visibility: visible; opacity: 1; }
+    #reset-modal.open, #import-modal.open, #resume-modal.open { visibility: visible; opacity: 1; }
     .reset-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.45); }
     .reset-card {
       position: relative; background: #fff; border-radius: 18px;
@@ -574,7 +574,7 @@
       transform: scale(0.94);
       transition: transform 0.18s ease;
     }
-    #reset-modal.open .reset-card, #import-modal.open .reset-card { transform: scale(1); }
+    #reset-modal.open .reset-card, #import-modal.open .reset-card, #resume-modal.open .reset-card { transform: scale(1); }
     .reset-icon {
       width: 48px; height: 48px; border-radius: 50%;
       background: #FDECEA; display: flex; align-items: center; justify-content: center;
