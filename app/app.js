@@ -821,11 +821,11 @@ function closePanel(id) { $(id).classList.remove('open'); }
 // ════════════════════════════════════════════════════
 
 let snackTimer;
-function toast(msg) {
+function toast(msg, ms = 2200) {
   snack.textContent = msg;
   snack.classList.add('show');
   clearTimeout(snackTimer);
-  snackTimer = setTimeout(() => snack.classList.remove('show'), 2200);
+  snackTimer = setTimeout(() => snack.classList.remove('show'), ms);
 }
 
 // ════════════════════════════════════════════════════
@@ -1016,14 +1016,22 @@ function doReset() {
 
 // Debounced so rapid-fire marking (several rallies in a row) coalesces into
 // one write instead of one per mark.
-const mcScheduleAutosave = mcDebounce(() => {
+let mcWarnedUnavailable = false; // only nag once per page load, not per mark
+const mcScheduleAutosave = mcDebounce(async () => {
   if (!videoFile) return;
-  mcSaveProject(mcBuildEnvelope({
+  const saved = await mcSaveProject(mcBuildEnvelope({
     videoFingerprint: mcFingerprint(videoFile),
     homeTeam: $('inp-home').value || 'Home',
     awayTeam: $('inp-away').value || 'Away',
     clips,
   }));
+  // Autosave couldn't write (private browsing, storage full/disabled, etc.)
+  // — tell the user once so they know to fall back to manually downloading
+  // their marks instead of assuming they're safe.
+  if (!saved && !mcWarnedUnavailable) {
+    mcWarnedUnavailable = true;
+    toast('Autosave unavailable — use Save Markers', 5000);
+  }
 }, 400);
 
 let pendingResume = null;

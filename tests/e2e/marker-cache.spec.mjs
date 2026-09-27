@@ -165,3 +165,31 @@ test('Reset clears the cached session so it is not offered again', async ({ page
   await pickFile(page, bytesArray);
   await expect(page.locator('#resume-modal')).not.toHaveClass(/open/);
 });
+
+test('a failed autosave (e.g. IndexedDB unavailable) tells the user to save manually instead of failing silently', async ({ page }) => {
+  // Simulate an environment where IndexedDB can't be used — private browsing
+  // in some browsers, or a browser that lacks it — by neutering it before any
+  // page script runs. mcOpenDb()'s try/catch around indexedDB.open() means
+  // this is caught the same way a real unavailable-IndexedDB error would be,
+  // regardless of exactly how "unavailable" it is.
+  await page.addInitScript(() => {
+    try {
+      Object.defineProperty(window, 'indexedDB', { get: () => undefined, configurable: true });
+    } catch { /* best-effort for this test */ }
+  });
+  await page.goto('/app.html');
+  await page.waitForSelector('#btn-undo', { state: 'attached' });
+  await page.waitForFunction(() => typeof mcScheduleAutosave === 'function');
+
+  const bytesArray = await generateTestMp4(page);
+  await pickFile(page, bytesArray);
+  await page.locator('#nav-editor').click();
+  await addClipViaApi(page, 0.1, 0.3);
+
+  // Marking still works even though the cache can't — this must never break
+  // the editor — but the user should be told, not left assuming autosave
+  // silently has their back.
+  await expect(page.locator('#snack')).toContainText('Autosave unavailable', { timeout: 5000 });
+  const clipCount = await page.evaluate(() => clips.length);
+  expect(clipCount).toBe(1);
+});
