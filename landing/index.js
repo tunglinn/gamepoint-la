@@ -1,55 +1,32 @@
-const steps = Array.from(document.querySelectorAll('.step'));
-const dots = Array.from(document.querySelectorAll('.dot'));
-const prevBtn = document.querySelector('.prev-arrow');
-const nextBtn = document.querySelector('.next-arrow');
-const track = document.querySelector('.steps-track');
+// Rotating "Edit your match ___" phrase. All phrases live in the markup (so
+// they're in the page text); only one is visible and exposed to screen readers.
+const phrases = Array.from(document.querySelectorAll('.rotator .phrase'));
+const PHRASE_MS = 2400;
 
 let current = 0;
-let touchStartX = 0;
-let animating = false;
 
-function goTo(index, direction) {
-  if (animating || index === current) return;
-  animating = true;
+phrases.forEach((p, i) => p.setAttribute('aria-hidden', i === current ? 'false' : 'true'));
 
-  const incoming = steps[index];
-  const outgoing = steps[current];
+function nextPhrase() {
+  const outgoing = phrases[current];
+  current = (current + 1) % phrases.length;
+  const incoming = phrases[current];
 
-  incoming.style.transform = direction > 0 ? 'translateX(60px)' : 'translateX(-60px)';
-  incoming.style.opacity = '0';
-  incoming.style.transition = 'none';
-  incoming.classList.add('active');
+  outgoing.classList.remove('is-active');
+  outgoing.classList.add('is-leaving');
+  outgoing.setAttribute('aria-hidden', 'true');
 
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      incoming.style.transition = '';
-      incoming.style.transform = 'translateX(0)';
-      incoming.style.opacity = '1';
+  incoming.classList.add('is-active');
+  incoming.setAttribute('aria-hidden', 'false');
 
-      outgoing.style.transform = direction > 0 ? 'translateX(-60px)' : 'translateX(60px)';
-      outgoing.style.opacity = '0';
-
-      dots[current].classList.remove('active');
-      dots[index].classList.add('active');
-      current = index;
-
-      setTimeout(() => {
-        outgoing.classList.remove('active');
-        outgoing.style.transform = '';
-        outgoing.style.opacity = '';
-        outgoing.style.transition = '';
-        animating = false;
-      }, 350);
-    });
-  });
+  // Once the leave animation finishes, park the old phrase back below the box
+  // without animating, ready for its next turn.
+  setTimeout(() => {
+    outgoing.style.transition = 'none';
+    outgoing.classList.remove('is-leaving');
+    outgoing.offsetHeight;
+    outgoing.style.transition = '';
+  }, 500);
 }
 
-prevBtn.addEventListener('click', () => goTo((current - 1 + steps.length) % steps.length, -1));
-nextBtn.addEventListener('click', () => goTo((current + 1) % steps.length, 1));
-dots.forEach((dot, i) => dot.addEventListener('click', () => goTo(i, i > current ? 1 : -1)));
-
-track.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, { passive: true });
-track.addEventListener('touchend', e => {
-  const dx = e.changedTouches[0].clientX - touchStartX;
-  if (Math.abs(dx) > 40) goTo(dx < 0 ? (current + 1) % steps.length : (current - 1 + steps.length) % steps.length, dx < 0 ? 1 : -1);
-});
+if (phrases.length > 1) setInterval(nextPhrase, PHRASE_MS);

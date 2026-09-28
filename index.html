@@ -2,143 +2,52 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GamePointLa — Mark and annotate sport videos</title>
-  <meta name="description" content="Mark serves, points, and highlights in sport videos. Clip and export instantly.">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>GamePointLa — Edit volleyball match videos on your phone</title>
+  <meta name="description" content="Mark rallies in your volleyball footage and export highlights with a live scoreboard — right in your phone's browser. Free, no upload, no account.">
   <link rel="icon" type="image/png" href="img/icon.png">
   <meta name="theme-color" content="#FFFFFF">
   <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="landing/index.css">
+  <link rel="prefetch" href="/app">
 </head>
 <body>
 
-  <nav>
-    <a class="nav-logo" href="#">GamePointLa</a>
-    <ul class="nav-links">
-      <li><a href="#how-it-works">How it works</a></li>
-      <li><a href="#features">Features</a></li>
-      <li><a href="/app" class="nav-cta">Start editing</a></li>
-    </ul>
-  </nav>
+  <header class="brand">GamePointLa</header>
 
-  <!-- HERO -->
-  <section class="hero">
-    <span class="hero-tag">Free &amp; runs in your browser</span>
-    <h1>Mark every moment<br>that matters.</h1>
-    <p>Load a sport video, drop markers on serves, points, and highlights, then export clean clips — no uploads, no accounts.</p>
-    <a href="/app" class="btn-primary">Start editing</a>
-  </section>
+  <main class="stage">
+    <section class="pitch">
+      <h1>
+        Edit your match
+        <span class="rotator">
+          <span class="phrase is-active">on your commute.</span>
+          <span class="phrase">on your lunch break.</span>
+          <span class="phrase">between matches.</span>
+          <span class="phrase">on the bus home.</span>
+          <span class="phrase">in the bleachers.</span>
+          <span class="phrase">before practice.</span>
+        </span>
+      </h1>
+      <p class="sub">Tap to mark each rally. Export highlights with the score on screen.</p>
+    </section>
 
-  <!-- HOW IT WORKS -->
-  <div class="how-section" id="how-it-works">
-    <div class="how-header">
-      <p class="section-label">How it works</p>
-      <h2>From raw footage<br>to highlights in minutes.</h2>
+    <!-- DEMO: drop a short screen recording at img/demo.mp4 (muted, ~10–15s, <1.5MB).
+         Until it exists the poster screenshot is shown instead. -->
+    <div class="demo">
+      <video class="demo-video" autoplay muted loop playsinline preload="auto"
+             poster="img/mark_serve.png" aria-label="GamePointLa marking a rally and exporting it">
+        <source src="img/demo.mp4" type="video/mp4">
+      </video>
     </div>
-    <div class="steps-carousel">
-      <button class="carousel-arrow prev-arrow" aria-label="Previous step">&#8592;</button>
-      <div class="steps-track">
-        <div class="step active">
-          <div class="step-visual"><img src="img/upload_video.png" alt="Open a video"></div>
-          <div class="step-text">
-            <span class="step-num">01 / 05</span>
-            <h3>Open a video</h3>
-            <p>Pick any video file from your device. No size limit, no upload wait.</p>
-          </div>
-        </div>
-        <div class="step">
-          <div class="step-visual"><img src="img/set_names.png" alt="Set player names"></div>
-          <div class="step-text">
-            <span class="step-num">02 / 05</span>
-            <h3>Set player names</h3>
-            <p>Name the players or teams so your markers and exports are easy to identify.</p>
-          </div>
-        </div>
-        <div class="step">
-          <div class="step-visual"><img src="img/mark_serve.png" alt="Mark the serve"></div>
-          <div class="step-text">
-            <span class="step-num">03 / 05</span>
-            <h3>Mark the serve</h3>
-            <p>Tap the marker button as the serve happens to drop a marker at that exact moment.</p>
-          </div>
-        </div>
-        <div class="step">
-          <div class="step-visual"><img src="img/mark_end.png" alt="Mark the end"></div>
-          <div class="step-text">
-            <span class="step-num">04 / 05</span>
-            <h3>Mark the end</h3>
-            <p>Drop a second marker when the point ends to define the full clip range.</p>
-          </div>
-        </div>
-        <div class="step">
-          <div class="step-visual"><img src="img/export.png" alt="Export clips"></div>
-          <div class="step-text">
-            <span class="step-num">05 / 05</span>
-            <h3>Export clips</h3>
-            <p>Choose your markers, set in/out points, and export individual clips or a full highlight reel.</p>
-          </div>
-        </div>
-      </div>
-      <button class="carousel-arrow next-arrow" aria-label="Next step">&#8594;</button>
-    </div>
-    <div class="carousel-dots">
-      <span class="dot active" data-index="0"></span>
-      <span class="dot" data-index="1"></span>
-      <span class="dot" data-index="2"></span>
-      <span class="dot" data-index="3"></span>
-      <span class="dot" data-index="4"></span>
-    </div>
-  </div>
 
-
-  <!-- APP VIDEO TUTORIAL -->
-  <div class="hero-visual">
-    <div class="screen">
-      <iframe style="width:100%;height:100%;border:none;" src="https://www.youtube.com/embed/ZIPILL4TE3k?si=M9b1xXFENl3zWrN1" title="YouTube video player" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-    </div>
-  </div>
-
-  <!-- FEATURES -->
-  <section class="section" id="features">
-    <p class="section-label">Features</p>
-    <h2>Everything you need,<br>nothing you don't.</h2>
-    <div class="features-grid">
-      <div class="feature-card">
-        <div class="feature-icon">🎯</div>
-        <h3>One-tap markers</h3>
-        <p>Drop a marker at the exact frame. Label it as a serve, point, and/or highlight.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">✂️</div>
-        <h3>Clip &amp; export</h3>
-        <p>Export all clips or highlights only — processed locally, never uploaded.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">📱</div>
-        <h3>Works everywhere</h3>
-        <p>Runs in your browser on desktop or mobile. Install it as an app on Android or iOS for offline use.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">🔒</div>
-        <h3>Private by design</h3>
-        <p>Your videos stay on your device. No server, no cloud, no account required.</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- CTA -->
-  <section class="cta-section">
-    <h2>Ready to mark your game?</h2>
-    <p>Free, instant, private. No sign-up needed.</p>
-    <a href="/app" class="btn-primary">Start editing</a>
-    <p class="install-hint">Or install as an app on your phone for offline access.</p>
-  </section>
-
-  <footer>
-    <span>GamePointLa</span>
-    <span>Runs entirely in your browser. Your videos never leave your device.</span>
-  </footer>
-
+    <section class="action">
+      <a href="/app" class="start-btn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15L19.5 12z"/></svg>
+        Start editing
+      </a>
+      <p class="trust">Free · No upload · No account · <a href="https://www.youtube.com/watch?v=ZIPILL4TE3k" target="_blank" rel="noopener">How it works</a></p>
+    </section>
+  </main>
 
 <script src="app/analytics.js"></script>
 <script src="landing/index.js"></script>
