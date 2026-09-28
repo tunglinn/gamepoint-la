@@ -49,21 +49,19 @@
     <div id="score-nums"><span class="sh" id="sc-home">0</span><span class="sep">:</span><span class="sa" id="sc-away">0</span></div>
 
     <div class="ed-top-side" id="ed-top-right">
-      <button class="gl-btn" id="btn-undo" onclick="undo()" title="Undo (Ctrl+Z)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
-      </button>
-      <button class="gl-btn" id="btn-redo" onclick="redo()" title="Redo (Ctrl+Y)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg>
-      </button>
-      <button class="gl-btn gl-btn-accent" id="btn-export" onclick="openExport()" title="Export">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      <button class="export-pill" id="btn-export" onclick="openExport()" title="Export">
+        <!-- video camera -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+        Export
       </button>
     </div>
 
-    <!-- Full-width rows under the buttons, so the right-side button group
-         never has to share a phone-width row with long team names or the
-         rally pill. -->
+    <!-- Full-width rows under the buttons, so the top row never has to share
+         phone width with long team names or the rally pill. -->
     <div id="score-teams">HOME vs AWAY</div>
+    <!-- Team names are only editable in the side menu; nudge the user there
+         until they've set at least one (see updateScore()). -->
+    <button id="team-hint" onclick="editTeamNames()">✎ Tap to set team names</button>
     <div id="rec-bar"></div>
   </div>
 
@@ -97,11 +95,15 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
       </button>
 
-      <div class="dp dp-empty"></div>
+      <button class="dp" id="btn-undo" onclick="undo()" title="Undo (Ctrl+Z)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
+      </button>
       <button class="dp" onclick="dDown()" title="Marks List (M)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
       </button>
-      <div class="dp dp-empty"></div>
+      <button class="dp" id="btn-redo" onclick="redo()" title="Redo (Ctrl+Y)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg>
+      </button>
     </div>
 
     <!-- Action pad -->

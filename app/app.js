@@ -179,6 +179,13 @@ function openMenu() {
 
 function closeMenu() { closeLayer('menu'); }
 
+// From the top-bar "set team names" hint: open the menu straight into editing.
+// focus() stays inside the tap's user-activation, so mobile shows the keyboard.
+function editTeamNames() {
+  openMenu();
+  $('inp-home').focus({ preventScroll: true });
+}
+
 function hideMenu() {
   sideMenu.classList.remove('open');
   // Drop focus from the team inputs so the soft keyboard doesn't stay up over
@@ -445,6 +452,7 @@ function updateScore() {
   const homeLabel = $('inp-home').value || 'HOME';
   const awayLabel = $('inp-away').value || 'AWAY';
   $('score-teams').textContent = homeLabel.toUpperCase() + ' vs ' + awayLabel.toUpperCase();
+  $('team-hint').hidden = !!($('inp-home').value || $('inp-away').value);
   $('sc-home').textContent = h;
   $('sc-away').textContent = a;
 }

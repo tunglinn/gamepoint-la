@@ -101,9 +101,7 @@
     /* No video yet: only the menu, export and the open-video prompt are usable. */
     #editor-view.no-video #progress-wrap,
     #editor-view.no-video #ed-controls,
-    #editor-view.no-video #rec-bar,
-    #editor-view.no-video #btn-undo,
-    #editor-view.no-video #btn-redo { visibility: hidden; }
+    #editor-view.no-video #rec-bar { visibility: hidden; }
 
     /* Top bar */
     #ed-top {
@@ -138,8 +136,28 @@
     /* 44×44 touch target around the 38px visual; the 3px bleed matches half
        the 6px gap so neighbouring hit areas meet without overlapping. */
     .gl-btn::after { content: ''; position: absolute; inset: -3px; }
-    .gl-btn-accent { background: var(--serve); }
-    .gl-btn-accent:active { background: #00a08a; }
+
+    .export-pill {
+      display: flex; align-items: center; gap: 6px;
+      height: 38px; padding: 0 14px 0 12px; border-radius: 100px;
+      border: none; background: var(--serve); color: #fff; cursor: pointer;
+      font-family: 'Barlow Condensed', sans-serif; font-size: 15px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase;
+      flex-shrink: 0; position: relative;
+      transition: background var(--trans), transform 0.1s;
+    }
+    .export-pill:active { background: #00a08a; transform: scale(0.94); }
+    .export-pill svg { width: 18px; height: 18px; stroke-width: 2.2; }
+    .export-pill::after { content: ''; position: absolute; inset: -3px; } /* 44px-tall hit area */
+
+    #team-hint {
+      grid-column: 1 / -1; justify-self: center;
+      margin-top: 2px; padding: 4px 12px; border-radius: 100px;
+      border: 1px dashed rgba(255,255,255,0.35); background: rgba(0,0,0,0.25);
+      color: rgba(255,255,255,0.8); cursor: pointer;
+      font-family: 'Barlow', sans-serif; font-size: 12px; font-weight: 600;
+    }
+    #team-hint:active { background: rgba(255,255,255,0.15); }
+    #team-hint[hidden] { display: none; }
 
     #score-teams {
       grid-column: 1 / -1; text-align: center;
@@ -182,9 +200,7 @@
     /* Narrow phones (iPhone SE/mini, small Androids): keep the three right-side
        buttons plus the score on one row. */
     @media (max-width: 370px) {
-      .gl-btn { width: 34px; height: 34px; }
-      .gl-btn::after { inset: -5px; }
-      #score-nums { font-size: 28px; }
+      .export-pill { padding: 0 11px 0 9px; font-size: 14px; }
     }
 
     /* Progress */
@@ -267,7 +283,6 @@
     }
     .dp:active { background: rgba(255,255,255,0.26); transform: scale(0.88); }
     .dp.center { background: rgba(255,255,255,0.18); font-size: 16px; }
-    .dp-empty { background: transparent !important; pointer-events: none; }
     .dp.star-on { background: rgba(255,171,0,0.3); color: var(--highlight); }
     .dp:disabled { opacity: 0.28; cursor: default; }
     .dp svg { width: 18px; height: 18px; stroke-width: 2.2; pointer-events: none; }

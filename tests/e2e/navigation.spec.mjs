@@ -97,6 +97,22 @@ test('swiping the menu left closes it', async ({ page }) => {
   await expect(page.locator('#side-menu')).not.toHaveClass(/open/);
 });
 
+test('export button is labelled "Export"', async ({ page }) => {
+  await expect(page.locator('#btn-export')).toHaveText(/Export/);
+});
+
+test('team-name hint opens the menu on the Home field and disappears once a name is set', async ({ page }) => {
+  const hint = page.locator('#team-hint');
+  await expect(hint).toBeVisible();
+
+  await hint.click();
+  await expect(page.locator('#side-menu')).toHaveClass(/open/);
+  await expect(page.locator('#inp-home')).toBeFocused();
+
+  await page.keyboard.type('Eagles');
+  await expect(hint).toBeHidden();
+});
+
 test('team names typed in the menu update the editor scoreboard', async ({ page }) => {
   await page.locator('#btn-menu').click();
   await page.locator('#inp-home').fill('Eagles');
