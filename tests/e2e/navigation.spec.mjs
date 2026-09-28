@@ -101,16 +101,44 @@ test('export button is labelled "Export"', async ({ page }) => {
   await expect(page.locator('#btn-export')).toHaveText(/Export/);
 });
 
-test('team-name hint opens the menu on the Home field and disappears once a name is set', async ({ page }) => {
-  const hint = page.locator('#team-hint');
-  await expect(hint).toBeVisible();
+// The menu callout only cares that a file was picked (videoLoaded), not that
+// it decodes, so a few junk bytes avoid generating a real MP4 here.
+async function pickFakeVideo(page) {
+  await page.locator('#file-input').setInputFiles({
+    name: 'match.mp4', mimeType: 'video/mp4', buffer: Buffer.from('not really a video'),
+  });
+  await expect(page.locator('#snack')).toContainText('Video loaded');
+}
 
-  await hint.click();
-  await expect(page.locator('#side-menu')).toHaveClass(/open/);
-  await expect(page.locator('#inp-home')).toBeFocused();
+test('menu callout appears only once a video is loaded, and "Got it" dismisses it for good', async ({ page }) => {
+  const callout = page.locator('#menu-callout');
+  await expect(callout).toBeHidden();
 
-  await page.keyboard.type('Eagles');
-  await expect(hint).toBeHidden();
+  await pickFakeVideo(page);
+  await expect(callout).toBeVisible();
+  await expect(callout).toContainText('menu');
+
+  await callout.locator('button:has-text("Got it")').click();
+  await expect(callout).toBeHidden();
+
+  // Remembered on this device: a reload + new video doesn't show it again.
+  await page.reload();
+  await page.waitForFunction(() => typeof openMenu === 'function');
+  await pickFakeVideo(page);
+  await expect(callout).toBeHidden();
+});
+
+test('opening the menu dismisses the callout', async ({ page }) => {
+  await pickFakeVideo(page);
+  await expect(page.locator('#menu-callout')).toBeVisible();
+  await page.locator('#btn-menu').click();
+  await expect(page.locator('#menu-callout')).toBeHidden();
+});
+
+test('menu callout is not shown when team names are already set', async ({ page }) => {
+  await page.evaluate(() => { $('inp-home').value = 'Eagles'; });
+  await pickFakeVideo(page);
+  await expect(page.locator('#menu-callout')).toBeHidden();
 });
 
 test('team names typed in the menu update the editor scoreboard', async ({ page }) => {

@@ -59,10 +59,14 @@
     <!-- Full-width rows under the buttons, so the top row never has to share
          phone width with long team names or the rally pill. -->
     <div id="score-teams">HOME vs AWAY</div>
-    <!-- Team names are only editable in the side menu; nudge the user there
-         until they've set at least one (see updateScore()). -->
-    <button id="team-hint" onclick="editTeamNames()">✎ Tap to set team names</button>
     <div id="rec-bar"></div>
+  </div>
+
+  <!-- One-time coach mark pointing at the menu button: team names are only
+       editable in the side menu. See MENU CALLOUT in app.js. -->
+  <div id="menu-callout" role="status" aria-live="polite">
+    <span class="callout-text">Set your team names in the menu</span>
+    <button class="callout-ok" onclick="dismissMenuCallout()">Got it</button>
   </div>
 
   <!-- Flex spacer -->

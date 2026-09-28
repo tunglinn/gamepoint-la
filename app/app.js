@@ -173,18 +173,12 @@ if (window.history.state && window.history.state.gplDepth) window.history.replac
 function openMenu() {
   if (sideMenu.classList.contains('open')) return;
   editorVideo.pause();
+  dismissMenuCallout(); // they found the menu — the coach mark has done its job
   sideMenu.classList.add('open');
   pushLayer('menu');
 }
 
 function closeMenu() { closeLayer('menu'); }
-
-// From the top-bar "set team names" hint: open the menu straight into editing.
-// focus() stays inside the tap's user-activation, so mobile shows the keyboard.
-function editTeamNames() {
-  openMenu();
-  $('inp-home').focus({ preventScroll: true });
-}
 
 function hideMenu() {
   sideMenu.classList.remove('open');
@@ -232,6 +226,35 @@ function hideMenu() {
   sideMenu.addEventListener('touchend', end, { passive: true });
   sideMenu.addEventListener('touchcancel', end, { passive: true });
 })();
+
+// ════════════════════════════════════════════════════
+//  MENU CALLOUT
+//  One-time coach mark pointing at the menu button, since team names are only
+//  editable in the side menu. Shown once a video is loaded while both names
+//  are still blank; dismissed by "Got it" or by opening the menu, and then
+//  remembered on this device (localStorage — a nonessential convenience, so
+//  every access is guarded and a failure just means it may show again).
+// ════════════════════════════════════════════════════
+const MENU_CALLOUT_KEY = 'gpl.menuCalloutSeen';
+let menuCalloutSeen = false;
+try { menuCalloutSeen = localStorage.getItem(MENU_CALLOUT_KEY) === '1'; } catch {}
+
+// Called from updateScore(), which already runs on every event that can
+// change the answer (video load, name input, import, reset).
+function syncMenuCallout() {
+  const show = videoLoaded && !menuCalloutSeen
+    && !$('inp-home').value && !$('inp-away').value;
+  $('menu-callout').classList.toggle('show', show);
+  $('btn-menu').classList.toggle('pulse', show);
+}
+
+function dismissMenuCallout() {
+  if (!menuCalloutSeen) {
+    menuCalloutSeen = true;
+    try { localStorage.setItem(MENU_CALLOUT_KEY, '1'); } catch {}
+  }
+  syncMenuCallout();
+}
 
 // Team names live in the menu now, while the scoreboard above the video stays
 // visible — keep it in sync as the user types. Enter ("Done" on mobile
@@ -452,7 +475,7 @@ function updateScore() {
   const homeLabel = $('inp-home').value || 'HOME';
   const awayLabel = $('inp-away').value || 'AWAY';
   $('score-teams').textContent = homeLabel.toUpperCase() + ' vs ' + awayLabel.toUpperCase();
-  $('team-hint').hidden = !!($('inp-home').value || $('inp-away').value);
+  syncMenuCallout();
   $('sc-home').textContent = h;
   $('sc-away').textContent = a;
 }
