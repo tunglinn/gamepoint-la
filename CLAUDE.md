@@ -61,7 +61,7 @@ Both pages load `app/analytics.js` and fire a `page_view` event via `trackEvent(
 
 ### PWA / offline
 
-`sw.js` is a hand-written service worker with a hard-coded cache name (currently `gamepointla-v5`) that must be bumped manually on any deploy that changes cached assets (`./`, `./manifest.webmanifest`, `./app/lib/mp4-muxer.js`), or users may keep serving stale files. Only precache paths that return 200 on every host — never `/app`, which 301s cross-origin on the bare domain and would make `cache.addAll()` reject, failing the install and leaving the old worker in charge.
+`sw.js` is a hand-written service worker with a hard-coded cache name (currently `gamepointla-v6`) that must be bumped manually on any deploy that changes cached assets (`./`, `./manifest.webmanifest`, `./app/lib/mp4-muxer.js`), or users may keep serving stale files. Only precache paths that return 200 on every host — never `/app`, which 301s cross-origin on the bare domain and would make `cache.addAll()` reject, failing the install and leaving the old worker in charge.
 
 ### Key browser-compat fixes worth knowing before touching video/export code
 
