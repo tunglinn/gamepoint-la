@@ -17,7 +17,7 @@ npm run test:watch       # unit tests, watch mode
 npm run test:e2e         # e2e tests (Playwright, real Chromium) — ~30-60s
 npm run test:e2e:ui      # e2e tests, interactive UI (useful for debugging failures)
 
-npm run dev              # wrangler pages dev (serves the app + functions/ + D1 locally)
+npm run dev              # wrangler pages dev (serves the app + functions/ + D1 locally) — landing at localhost:8788, editor at app.localhost:8788
 npm run serve            # npx serve . — static-only serving, no functions/D1
 npm run db -- "<SQL>"    # wrangler d1 execute against the local persisted D1 (gamepointla-analytics)
 ```
@@ -32,7 +32,9 @@ No build step, no bundler, no transpiler. `npm run dev` (wrangler) is the only w
 ### Two static entry points, one shared static-file root
 
 - `index.html` + `landing/index.js` + `landing/index.css` — marketing landing page at `/`.
-- `app.html` + `app/app.js` + `app/export-engine.js` — the actual editor, served at `/app` (clean URLs strip `.html`; see `serve.json` and Cloudflare Pages' default clean-URL behavior — there is no explicit routing config for this).
+- `app.html` + `app/app.js` + `app/export-engine.js` — the actual editor, served at the root of the `app.` subdomain (`app.gamepointla.com`, or `app.localhost:8788` under `npm run dev`).
+
+**Host-based routing** (`functions/_middleware.js`): both hostnames are custom domains on the same Pages project and share every static file. On an `app.*` host, `/` is rewritten to `/app` (the clean-URL form of `app.html`). On the bare domain, `/app` and `/app.html` 301 to `app.<domain>/` (keeping protocol/port; `www.` is replaced). IP hosts and `*.pages.dev` previews can't have an `app.` sibling, so they keep serving the editor at `/app` — as does `npm run serve`, which doesn't run Functions at all. `_routes.json` limits Function invocations to `/`, `/app`, `/app.html`, `/track`, `/admin`; everything else is served as a static asset without hitting the middleware. Chrome/Edge/Firefox resolve `*.localhost` to loopback automatically; Safari needs a hosts-file entry. Note IndexedDB (marker cache) and the service worker are per-origin, so data doesn't cross between the two hosts.
 
 Both pages load `app/analytics.js` and fire a `page_view` event via `trackEvent()`, which POSTs to `/track` (a Pages Function).
 
@@ -59,7 +61,7 @@ Both pages load `app/analytics.js` and fire a `page_view` event via `trackEvent(
 
 ### PWA / offline
 
-`sw.js` is a hand-written service worker with a hard-coded cache name (currently `gamepointla-v3`) that must be bumped manually on any deploy that changes cached assets (`./`, `./index.html`, `/app`, `./manifest.webmanifest`, `/app/lib/mp4-muxer.js`), or users may keep serving stale files.
+`sw.js` is a hand-written service worker with a hard-coded cache name (currently `gamepointla-v5`) that must be bumped manually on any deploy that changes cached assets (`./`, `./manifest.webmanifest`, `./app/lib/mp4-muxer.js`), or users may keep serving stale files. Only precache paths that return 200 on every host — never `/app`, which 301s cross-origin on the bare domain and would make `cache.addAll()` reject, failing the install and leaving the old worker in charge.
 
 ### Key browser-compat fixes worth knowing before touching video/export code
 
