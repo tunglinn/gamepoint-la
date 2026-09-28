@@ -247,8 +247,8 @@ async function addClipViaApi(page, startSec, endSec) {
 test.beforeEach(async ({ page }) => {
   // The editor app lives at /app.html — the site root is the marketing page.
   await page.goto('/app.html');
-  // Wait until the DOM is parsed (#btn-undo is static markup inside the closed
-  // editor view, so it's attached but not visible) and app.js has initialised.
+  // Wait until the DOM is parsed (#btn-undo is static markup in the editor,
+  // hidden until a video loads) and app.js has initialised.
   await page.waitForSelector('#btn-undo', { state: 'attached' });
   await page.waitForFunction(() => typeof doVideoExport === 'function');
 });
@@ -261,13 +261,16 @@ test('page loads without JS errors', async ({ page }) => {
   expect(errors).toHaveLength(0);
 });
 
-test('video loads and editor opens', async ({ page }) => {
+test('video loads straight into the editor', async ({ page }) => {
+  // The editor is the landing screen: the open-video prompt shows until a
+  // file is picked, then gives way to the video and marking controls.
+  await expect(page.locator('#placeholder')).toBeVisible();
+  await expect(page.locator('#ed-controls')).toBeHidden();
+
   await loadVideoIntoApp(page);
 
-  // Open the editor.
-  await page.locator('#nav-editor').click();
-  await expect(page.locator('#editor-view')).toHaveClass(/open/);
-
+  await expect(page.locator('#placeholder')).toBeHidden();
+  await expect(page.locator('#ed-controls')).toBeVisible();
   // The progress bar should have a valid max once metadata loads.
   await expect(page.locator('#vid-progress')).not.toHaveAttribute('max', '100');
 });
@@ -275,14 +278,11 @@ test('video loads and editor opens', async ({ page }) => {
 test('WebCodecs export completes and produces a non-empty MP4', async ({ page }) => {
   await loadVideoIntoApp(page);
 
-  // Open editor and add one clip covering 0.1 s → 0.8 s.
-  await page.locator('#nav-editor').click();
-  await expect(page.locator('#editor-view')).toHaveClass(/open/);
+  // Add one clip covering 0.1 s → 0.8 s.
   await addClipViaApi(page, 0.1, 0.8);
 
   // Open the export panel.
-  await page.locator('#editor-view').press('Escape');
-  await page.locator('#nav-export').click();
+  await page.locator('#btn-export').click();
 
   // Start the download and capture the file contents.
   const [download] = await Promise.all([
@@ -304,10 +304,8 @@ test('WebCodecs export completes and produces a non-empty MP4', async ({ page })
 test('WebCodecs export shows 100% progress and Done button', async ({ page }) => {
   await loadVideoIntoApp(page);
 
-  await page.locator('#nav-editor').click();
   await addClipViaApi(page, 0.1, 0.8);
-  await page.locator('#editor-view').press('Escape');
-  await page.locator('#nav-export').click();
+  await page.locator('#btn-export').click();
 
   await page.locator('button:has-text("Export Video")').click();
 
@@ -319,7 +317,7 @@ test('WebCodecs export shows 100% progress and Done button', async ({ page }) =>
 
 test('export shows error when no clips are marked', async ({ page }) => {
   await loadVideoIntoApp(page);
-  await page.locator('#nav-export').click();
+  await page.locator('#btn-export').click();
 
   // No clips have been added, so the export should fail gracefully.
   await page.locator('button:has-text("Export Video")').click();
@@ -329,11 +327,9 @@ test('export shows error when no clips are marked', async ({ page }) => {
 test('export can be cancelled mid-way', async ({ page }) => {
   await loadVideoIntoApp(page);
 
-  await page.locator('#nav-editor').click();
   // Add a longer clip so there's time to cancel.
   await addClipViaApi(page, 0.0, 0.95);
-  await page.locator('#editor-view').press('Escape');
-  await page.locator('#nav-export').click();
+  await page.locator('#btn-export').click();
 
   await page.locator('button:has-text("Export Video")').click();
   // Cancel almost immediately.
@@ -350,10 +346,8 @@ test('exported frames are not all black', async ({ page }) => {
   // frame and verify at least some pixels are non-zero.
 
   await loadVideoIntoApp(page);
-  await page.locator('#nav-editor').click();
   await addClipViaApi(page, 0.0, 0.5);
-  await page.locator('#editor-view').press('Escape');
-  await page.locator('#nav-export').click();
+  await page.locator('#btn-export').click();
 
   const [download] = await Promise.all([
     page.waitForEvent('download', { timeout: 60_000 }),
@@ -411,10 +405,8 @@ test('export succeeds when the loaded video is a fragmented MP4 (moof/mdat)', as
   // further trimming/combining — the input parser must be able to read
   // fragmented MP4s, not just the classic flat moov+mdat layout.
   await loadVideoIntoApp(page, { fastStart: 'fragmented' });
-  await page.locator('#nav-editor').click();
   await addClipViaApi(page, 0.1, 0.8);
-  await page.locator('#editor-view').press('Escape');
-  await page.locator('#nav-export').click();
+  await page.locator('#btn-export').click();
 
   const [download] = await Promise.all([
     page.waitForEvent('download', { timeout: 60_000 }),
@@ -440,10 +432,8 @@ test('export succeeds when mdat is preceded by a large padding box (moov-at-end)
   // plainly had one. See generatePaddedTestMp4 for exactly how this is built.
   const paddedBytes = await generatePaddedTestMp4(page);
   await loadVideoIntoApp(page, { bytes: paddedBytes });
-  await page.locator('#nav-editor').click();
   await addClipViaApi(page, 0.1, 0.8);
-  await page.locator('#editor-view').press('Escape');
-  await page.locator('#nav-export').click();
+  await page.locator('#btn-export').click();
 
   const [download] = await Promise.all([
     page.waitForEvent('download', { timeout: 60_000 }),

@@ -15,17 +15,14 @@ let retryExportAfterReopen = false;
 //  DOM
 // ════════════════════════════════════════════════════
 const $ = id => document.getElementById(id);
-// mainVideo/editorVideo both point at the same <video> element — it's moved
-// between #video-area and #editor-view (see openEditor/closeEditor) instead of
-// being duplicated, so there is only ever one hardware decoder in play. Two
-// separate <video> elements previously raced for Android's small fixed pool of
-// hardware decoder instances; if the main-view element grabbed the only slot,
-// the editor's element could sit at readyState 0 forever ("loads on the main
-// page, never loads in the editor tab"). Kept as two names since most of this
-// file, and the Playwright e2e test, refer to whichever one matches context.
+// mainVideo/editorVideo both point at the one <video> element, which lives
+// permanently in #editor-view (the app's base screen). There must only ever be
+// one: two <video> elements previously raced for Android's small fixed pool of
+// hardware decoder instances, and the loser could sit at readyState 0 forever.
+// Kept as two names since most of this file, and the Playwright e2e tests,
+// refer to whichever one matches context.
 const mainVideo   = $('shared-video');
 const editorVideo = mainVideo;
-const videoArea   = $('video-area');
 const placeholder = $('placeholder');
 const fileInput   = $('file-input');
 const editorView  = $('editor-view');
@@ -37,6 +34,7 @@ const dpPrev      = $('dp-prev');
 const dpNext      = $('dp-next');
 const marksModal  = $('marks-modal');
 const marksScroll = $('marks-scroll');
+const sideMenu    = $('side-menu');
 const snack       = $('snack');
 
 // ════════════════════════════════════════════════════
@@ -62,25 +60,23 @@ fileInput.addEventListener('change', e => {
   if (videoSrc) URL.revokeObjectURL(videoSrc);
   videoSrc = URL.createObjectURL(file);
   videoFile = file;
-  // Picking a new file always happens from the main view, but make sure the
-  // shared element is anchored there even if it somehow got left in the editor.
-  videoArea.insertBefore(mainVideo, placeholder);
   mainVideo.src = videoSrc;
   mainVideo.style.display = 'block';
   placeholder.style.display = 'none';
+  editorView.classList.remove('no-video');
   videoLoaded = true;
   fileInput.value = '';
+  closeMenu();
+  updateScore();
+  updateActionBtns();
+  updateUndoRedo();
+  syncProgress();
   toast('Video loaded ✓');
   if (retryExportAfterReopen) {
     retryExportAfterReopen = false;
     doVideoExport();
   }
   mcCheckForResume(file);
-});
-
-$('video-area').addEventListener('click', () => {
-  if (!videoLoaded) triggerOpen();
-  else { mainVideo.paused ? mainVideo.play() : mainVideo.pause(); }
 });
 
 // ── Android auto-pause recovery ──────────────────────
@@ -104,32 +100,139 @@ mainVideo.addEventListener('pause', () => {
 // ─────────────────────────────────────────────────────
 
 // ════════════════════════════════════════════════════
-//  EDITOR OPEN / CLOSE
+//  LAYERS (side menu / export page) + BACK BUTTON
+//  Each open layer pushes one history entry, so Android's hardware/gesture
+//  Back (and iOS edge-swipe back) closes the layer instead of leaving the app.
+//  In-app close buttons and Esc go through the same history entries so the
+//  stack stays balanced. NOTE: always `window.history` here — the bare name
+//  `history` is the undo/redo stack declared in STATE.
 // ════════════════════════════════════════════════════
-function openEditor() {
-  if (!videoLoaded) { toast('Open a video first'); return; }
-  if (window._dbgZone) window._dbgZone.style.pointerEvents = 'none';
-  // Reparenting a <video> element preserves its decoder/currentTime/play state —
-  // unlike reassigning .src, this does not trigger a reload, so there's nothing
-  // to wait for and no playhead to resync.
-  editorView.insertBefore(mainVideo, editorView.firstChild);
-  editorView.classList.add('open');
-  updateScore();
-  updateActionBtns();
-  updateUndoRedo();
-  syncProgress();
+const layers = []; // open layer names, bottom → top, e.g. ['export']
+const LAYER_HIDE = {
+  menu:   hideMenu,
+  export: () => closePanel('export-panel'),
+};
+
+// history.go() is async. If a layer opens while our own rewind is still in
+// flight (e.g. close menu → immediately tap Export), pushing right away would
+// land on the entry that's about to be popped, so defer it until the rewind's
+// popstate arrives.
+let ownTraversal = false;
+let deferredPushes = [];
+let traversalTimer = null;
+
+function pushLayer(name) {
+  layers.push(name);
+  const state = { gplDepth: layers.length };
+  if (ownTraversal) deferredPushes.push(state);
+  else window.history.pushState(state, '');
 }
 
-// Must match the #editor-view opacity transition duration in app.css so the
-// element doesn't visibly jump back to the main view mid-fade.
-const EDITOR_FADE_MS = 220;
-
-function closeEditor() {
-  if (window._dbgZone) window._dbgZone.style.pointerEvents = 'auto';
-  editorView.classList.remove('open');
-  updatePlayIcon();
-  setTimeout(() => videoArea.insertBefore(mainVideo, placeholder), EDITOR_FADE_MS);
+function finishOwnTraversal() {
+  ownTraversal = false;
+  clearTimeout(traversalTimer);
+  deferredPushes.forEach(st => window.history.pushState(st, ''));
+  deferredPushes = [];
 }
+
+// UI-initiated close of the top n layers. Hides them immediately (so the close
+// animation starts on the tap, not after the async history traversal) and then
+// rewinds history to match.
+function popLayers(n) {
+  n = Math.min(n, layers.length);
+  if (!n) return;
+  for (let i = 0; i < n; i++) LAYER_HIDE[layers.pop()]();
+  ownTraversal = true;
+  window.history.go(-n);
+  // Safety net: if the traversal never fires popstate, don't hold pushes forever.
+  clearTimeout(traversalTimer);
+  traversalTimer = setTimeout(finishOwnTraversal, 1000);
+}
+
+// Closes `name` and anything stacked above it. No-op if it isn't open.
+function closeLayer(name) {
+  const i = layers.lastIndexOf(name);
+  if (i !== -1) popLayers(layers.length - i);
+}
+
+// Browser/OS Back: hide whatever is deeper than the entry we landed on. Our own
+// rewinds already updated `layers`, so they only need to flush deferred pushes.
+window.addEventListener('popstate', e => {
+  if (ownTraversal) { finishOwnTraversal(); return; }
+  const depth = (e.state && e.state.gplDepth) || 0;
+  while (layers.length > depth) LAYER_HIDE[layers.pop()]();
+});
+
+// A reload keeps our pushed entries but not `layers`; start this page load at
+// depth 0 so a stale depth can't desync the stack.
+if (window.history.state && window.history.state.gplDepth) window.history.replaceState(null, '');
+
+// ════════════════════════════════════════════════════
+//  SIDE MENU
+// ════════════════════════════════════════════════════
+function openMenu() {
+  if (sideMenu.classList.contains('open')) return;
+  editorVideo.pause();
+  sideMenu.classList.add('open');
+  pushLayer('menu');
+}
+
+function closeMenu() { closeLayer('menu'); }
+
+function hideMenu() {
+  sideMenu.classList.remove('open');
+  // Drop focus from the team inputs so the soft keyboard doesn't stay up over
+  // the editor.
+  if (sideMenu.contains(document.activeElement)) document.activeElement.blur();
+}
+
+// Swipe left to close — the sheet follows the finger (transform only, so it
+// stays on the compositor), then either snaps shut or springs back.
+(function () {
+  const sheet = sideMenu.querySelector('.menu-sheet');
+  const backdrop = sideMenu.querySelector('.menu-backdrop');
+  const CLOSE_PX = 60;
+  let x0 = null, y0 = 0, dx = 0, horiz = null;
+
+  sideMenu.addEventListener('touchstart', e => {
+    if (!sideMenu.classList.contains('open') || e.touches.length !== 1) return;
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; horiz = null;
+  }, { passive: true });
+
+  sideMenu.addEventListener('touchmove', e => {
+    if (x0 === null) return;
+    const mx = e.touches[0].clientX - x0, my = e.touches[0].clientY - y0;
+    if (horiz === null) {
+      if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+      horiz = Math.abs(mx) > Math.abs(my);
+      if (horiz) sideMenu.classList.add('dragging');
+    }
+    if (!horiz) return;
+    dx = Math.min(0, mx);
+    sheet.style.transform = `translateX(${dx}px)`;
+    backdrop.style.opacity = String(Math.max(0, 1 + dx / sheet.offsetWidth));
+  }, { passive: true });
+
+  const end = () => {
+    if (x0 === null) return;
+    x0 = null;
+    if (!horiz) return;
+    sideMenu.classList.remove('dragging');
+    sheet.style.transform = '';
+    backdrop.style.opacity = '';
+    if (dx < -CLOSE_PX) closeMenu();
+  };
+  sideMenu.addEventListener('touchend', end, { passive: true });
+  sideMenu.addEventListener('touchcancel', end, { passive: true });
+})();
+
+// Team names live in the menu now, while the scoreboard above the video stays
+// visible — keep it in sync as the user types. Enter ("Done" on mobile
+// keyboards) dismisses the keyboard.
+['inp-home', 'inp-away'].forEach(id => {
+  $(id).addEventListener('input', updateScore);
+  $(id).addEventListener('keydown', e => { if (e.key === 'Enter') e.target.blur(); });
+});
 
 // ════════════════════════════════════════════════════
 //  PLAYBACK
@@ -469,34 +572,6 @@ function delClip(id) {
 }
 
 // ════════════════════════════════════════════════════
-//  REVIEW PANEL
-// ════════════════════════════════════════════════════
-function openReview() {
-  const body = $('review-body');
-  const sorted = [...clips].sort((a,b) => a.start - b.start);
-
-  if (!sorted.length) {
-    body.innerHTML = '<div style="padding:40px 20px;text-align:center;color:var(--text3);font-family:\'Barlow Condensed\',sans-serif;font-size:16px;font-weight:600;line-height:1.6">No marks yet.<br>Open the Editor to start marking.</div>';
-  } else {
-    body.innerHTML = sorted.map((c, i) => {
-      const cfg = TC[c.type] || TC.serve;
-      const dur = (c.end !== null) ? ` · ${fmtDur(c.end - c.start)}` : '';
-      return `<div class="rv-item">
-        <span class="rv-num">${i + 1}</span>
-        <span class="rv-badge" style="background:${cfg.bg};color:${cfg.color}">${cfg.label}</span>
-        <div class="rv-times">
-          <span class="rv-chip">▶ ${fmt(c.start)}</span>
-          ${c.end !== null ? `<span class="rv-chip">■ ${fmt(c.end)}</span>` : ''}
-          ${dur ? `<span class="rv-chip">${dur}</span>` : ''}
-        </div>
-        ${c.highlight ? '<span class="rv-star">⭐</span>' : ''}
-      </div>`;
-    }).join('');
-  }
-  $('review-panel').classList.add('open');
-}
-
-// ════════════════════════════════════════════════════
 //  EXPORT PANEL
 // ════════════════════════════════════════════════════
 let exportQuality         = 'medium';
@@ -654,6 +729,16 @@ function doVideoExport() {
 }
 
 function openExport() {
+  const panel = $('export-panel');
+  // Coming back to the page mid-export (e.g. user tapped Back, then Export
+  // again): just show the live progress view instead of re-rendering the
+  // options over it. The Cancel button only exists while an export runs.
+  const cancelBtn = $('exp-cancel-btn');
+  if (!panel.classList.contains('open') && cancelBtn && cancelBtn.textContent === 'Cancel') {
+    showExportPanel();
+    return;
+  }
+
   const homeLabel = $('inp-home').value || 'Home';
   const awayLabel = $('inp-away').value || 'Away';
   const homeScore = clips.filter(c => c.type === 'home_point').length;
@@ -767,9 +852,21 @@ function openExport() {
   </div>
   </div>`;
 
-  $('export-panel').classList.add('open');
+  showExportPanel();
   requestAnimationFrame(() => requestAnimationFrame(() => drawPreview()));
 }
+
+// openExport() is also called by export-engine.js to re-render the page in
+// place (Done/Back/cancel), so only push a history entry on a real open.
+function showExportPanel() {
+  const panel = $('export-panel');
+  if (panel.classList.contains('open')) return;
+  editorVideo.pause();
+  panel.classList.add('open');
+  pushLayer('export');
+}
+
+function closeExport() { closeLayer('export'); }
 
 function doExport() {
   const homeLabel = $('inp-home').value || 'Home';
@@ -806,6 +903,7 @@ function doExport() {
   a.download = `gamepointla_${homeLabel}_${awayLabel}_${date}.json`;
   a.click();
   URL.revokeObjectURL(url);
+  closeMenu();
   toast('Downloaded ✓');
 }
 
@@ -831,9 +929,20 @@ function toast(msg, ms = 2200) {
 // ════════════════════════════════════════════════════
 //  KEYBOARD SHORTCUTS
 // ════════════════════════════════════════════════════
+function modalOpen() {
+  return ['import-modal', 'reset-modal', 'resume-modal'].some(id => $(id).classList.contains('open'));
+}
+
 document.addEventListener('keydown', e => {
-  if (!editorView.classList.contains('open')) return;
-  if (e.target.tagName === 'INPUT') return;
+  if (modalOpen()) return;
+  // Esc closes the topmost layer: marks sheet → side menu → export page.
+  if (e.key === 'Escape') {
+    if (marksModal.classList.contains('open')) closeMarks();
+    else if (layers.length) popLayers(1);
+    return;
+  }
+  if (layers.length || e.target.tagName === 'INPUT') return;
+  if (!videoLoaded) return;
   const key = e.key;
   switch (key) {
     case 'ArrowLeft':  e.preventDefault(); dLeft();  break;
@@ -846,7 +955,6 @@ document.addEventListener('keydown', e => {
     case 'a': case 'A': if (!$('btn-away').disabled) pressPoint('away_point'); break;
     case 'n': case 'N': if (!$('btn-nopt').disabled) pressPoint('no_point');   break;
     case 'm': case 'M': marksModal.classList.contains('open') ? closeMarks() : openMarks(); break;
-    case 'Escape': marksModal.classList.contains('open') ? closeMarks() : closeEditor(); break;
     case 'z':
       if (e.ctrlKey || e.metaKey) { e.preventDefault(); e.shiftKey ? redo() : undo(); }
       break;
@@ -943,6 +1051,7 @@ function applyImport(data) {
   updateScore();
   syncDpUpStyle();
   if (marksModal.classList.contains('open')) renderMarks();
+  closeMenu();
 
   toast(`Imported ${clips.length} marker${clips.length !== 1 ? 's' : ''} ✓`);
 }
@@ -961,12 +1070,10 @@ function closeResetModal() {
 function doReset() {
   closeResetModal();
 
-  // Close any open views first
+  // Close any open layers first
   mainVideo.pause();
-  editorView.classList.remove('open');
   closeMarks();
-  closePanel('review-panel');
-  closePanel('export-panel');
+  popLayers(layers.length);
 
   // Clear state
   activeClip = null;
@@ -984,11 +1091,11 @@ function doReset() {
   videoFile = null;
   videoLoaded = false;
 
-  videoArea.insertBefore(mainVideo, placeholder);
   mainVideo.removeAttribute('src');
   mainVideo.load();
   mainVideo.style.display = 'none';
   placeholder.style.display = '';
+  editorView.classList.add('no-video');
 
   // Clear team names
   $('inp-home').value = '';
@@ -1082,13 +1189,11 @@ updateUndoRedo();
     panel.style.display = panel.style.display === 'none' ? '' : 'none';
   }
 
-  // Invisible 44×44px zone — bottom-left corner, above all overlays.
-  // Long-press 800ms to toggle the panel.
-  const zone = document.createElement('div');
-  zone.style.cssText = 'position:fixed;top:0;left:0;width:44px;height:44px;z-index:199;-webkit-touch-callout:none;user-select:none;touch-action:none;';
+  // Long-press (800ms) the logo in the side menu to toggle the panel. This used
+  // to be an invisible zone in the top-left corner, which is now the menu
+  // button.
+  const zone = $('menu-logo');
   zone.addEventListener('contextmenu', e => e.preventDefault());
-  document.body.appendChild(zone);
-  window._dbgZone = zone;
   let _zoneTimer = null, _zoneX = 0, _zoneY = 0;
   zone.addEventListener('pointerdown', e => {
     _zoneX = e.clientX; _zoneY = e.clientY;
@@ -1098,7 +1203,7 @@ updateUndoRedo();
     if (Math.abs(e.clientX - _zoneX) > 10 || Math.abs(e.clientY - _zoneY) > 10)
       clearTimeout(_zoneTimer);
   });
-  ['pointerup', 'pointercancel'].forEach(e =>
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(e =>
     zone.addEventListener(e, () => clearTimeout(_zoneTimer))
   );
 

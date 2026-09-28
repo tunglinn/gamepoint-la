@@ -20,7 +20,6 @@
       --danger:       #D32F2F;
       --radius:       14px;
       --radius-sm:    9px;
-      --nav-h:        68px;
       --header-h:     56px;
       --trans:        0.18s ease;
     }
@@ -35,43 +34,16 @@
       -webkit-text-size-adjust: 100%;
     }
 
-    button { font-family: 'Barlow', sans-serif; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
+    button { font-family: 'Barlow', sans-serif; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
 
-    /* ══════════════════════════════════════════
-       MAIN VIEW
-    ══════════════════════════════════════════ */
-    #main-view {
-      position: fixed; inset: 0;
-      display: flex; flex-direction: column;
-      background: var(--bg);
-    }
-
-    /* Header */
-    #header {
-      height: var(--header-h);
-      display: flex; align-items: center;
-      padding: 0 12px; gap: 8px;
-      border-bottom: 1px solid var(--border);
-      background: #fff; z-index: 10; flex-shrink: 0;
-    }
-
-    .logo {
-      flex-shrink: 0; display: flex; align-items: center; gap: 7px; text-decoration: none;
-    }
-    .logo img { height: 32px; width: auto; display: block; }
-    .logo-url {
-      font-family: 'Cy Grotesk Key', 'Barlow Condensed', sans-serif;
-      font-size: 13px; font-weight: 700; color: var(--text);
-      letter-spacing: 0.2px; white-space: nowrap; line-height: 1;
-    }
-    @media (max-width: 420px) { .logo-url { display: none; } }
-
+    /* Team name inputs (live in the side menu) */
     .team-wrap { flex: 1; position: relative; min-width: 0; }
     .team-input {
       width: 100%;
       border: 1.5px solid var(--border); border-radius: var(--radius-sm);
-      padding: 7px 10px;
-      font-family: 'Barlow', sans-serif; font-size: 13px; font-weight: 600;
+      padding: 11px 12px;
+      /* 16px, not smaller: iOS Safari zooms the page on focus for anything under 16px. */
+      font-family: 'Barlow', sans-serif; font-size: 16px; font-weight: 600;
       color: var(--text); background: var(--surface);
       outline: none; transition: border-color var(--trans), background var(--trans);
     }
@@ -89,22 +61,31 @@
 
     .vs { font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 700; color: var(--text3); flex-shrink: 0; letter-spacing: 1px; }
 
-    /* Video area */
-    #video-area {
-      flex: 1; display: flex; align-items: center; justify-content: center;
-      background: #0a0a0a; position: relative; overflow: hidden;
+    #file-input { display: none; }
+
+    /* ══════════════════════════════════════════
+       EDITOR VIEW (the app's base screen)
+    ══════════════════════════════════════════ */
+    #editor-view {
+      position: fixed; inset: 0;
+      height: 100vh; height: 100dvh; /* dvh: don't let the mobile URL bar clip the controls */
+      background: #000;
+      display: flex; flex-direction: column;
+      z-index: 100;
     }
 
-    /* #shared-video is one <video> element reused for both the main preview and
-       the editor — it's reparented between #video-area and #editor-view (see
-       app.js) rather than duplicated, so these rules key off whichever
-       container currently holds it instead of a fixed ID. */
-    #video-area #shared-video { max-width: 100%; max-height: 100%; width: 100%; height: 100%; object-fit: contain; display: none; }
+    #shared-video {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%; object-fit: contain;
+      display: none;
+    }
 
     #placeholder {
-      display: flex; flex-direction: column; align-items: center; gap: 16px;
+      position: absolute; inset: 0; z-index: 4;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
       cursor: pointer; padding: 40px; text-align: center;
       animation: fadeIn 0.4s ease;
+      -webkit-tap-highlight-color: transparent;
     }
     .ph-ring {
       width: 80px; height: 80px; border-radius: 50%;
@@ -117,67 +98,33 @@
     #placeholder small { font-size: 13px; color: rgba(255,255,255,0.3); }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
-    /* Bottom Nav */
-    #bottom-nav {
-      height: var(--nav-h); display: flex; align-items: stretch;
-      border-top: 1px solid var(--border); background: #fff; flex-shrink: 0;
-    }
-
-    .nav-btn {
-      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-      gap: 4px; border: none; background: none; cursor: pointer;
-      color: var(--text3); font-size: 10px; font-weight: 700; letter-spacing: 0.5px;
-      text-transform: uppercase; transition: color var(--trans);
-      position: relative;
-    }
-    .nav-btn::after {
-      content: ''; position: absolute; top: 0; left: 20%; right: 20%;
-      height: 2px; background: var(--serve); border-radius: 1px;
-      transform: scaleX(0); transition: transform var(--trans);
-    }
-    .nav-btn.active { color: var(--serve); }
-    .nav-btn.active::after { transform: scaleX(1); }
-    .nav-btn:active { color: var(--text2); }
-    .nav-btn svg { width: 22px; height: 22px; stroke-width: 1.8; }
-
-    #file-input { display: none; }
-
-    /* ══════════════════════════════════════════
-       EDITOR VIEW (fullscreen overlay)
-    ══════════════════════════════════════════ */
-    #editor-view {
-      position: fixed; inset: 0;
-      background: #000;
-      display: flex; flex-direction: column;
-      z-index: 100;
-      visibility: hidden; opacity: 0;
-      transition: opacity 0.22s ease, visibility 0.22s;
-    }
-    #editor-view.open { visibility: visible; opacity: 1; }
-
-    #editor-view #shared-video {
-      position: absolute; inset: 0;
-      width: 100%; height: 100%; object-fit: contain;
-    }
+    /* No video yet: only the menu, export and the open-video prompt are usable. */
+    #editor-view.no-video #progress-wrap,
+    #editor-view.no-video #ed-controls,
+    #editor-view.no-video #rec-bar,
+    #editor-view.no-video #btn-undo,
+    #editor-view.no-video #btn-redo { visibility: hidden; }
 
     /* Top bar */
     #ed-top {
       position: relative; z-index: 5;
       display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
       align-items: center;
-      padding: 10px 14px; gap: 10px;
+      padding: calc(8px + env(safe-area-inset-top, 0px)) calc(12px + env(safe-area-inset-right, 0px)) 8px calc(12px + env(safe-area-inset-left, 0px));
+      column-gap: 8px; row-gap: 2px;
       background: linear-gradient(to bottom, rgba(0,0,0,0.72) 0%, transparent 100%);
       pointer-events: none;
     }
     #ed-top > * { pointer-events: auto; }
     .ed-top-side {
-      display: flex; align-items: center; gap: 10px;
+      display: flex; align-items: center; gap: 6px;
       min-width: 0;
     }
-    #ed-top-left { justify-self: start; position: relative; z-index: 200; }
+    #ed-top-left { justify-self: start; }
     #ed-top-right { justify-self: end; justify-content: flex-end; }
 
     .gl-btn {
+      position: relative;
       width: 38px; height: 38px; border-radius: 50%;
       border: none; background: rgba(255,255,255,0.14);
       backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
@@ -188,26 +135,36 @@
     .gl-btn:active { background: rgba(255,255,255,0.28); transform: scale(0.9); }
     .gl-btn:disabled { opacity: 0.35; }
     .gl-btn svg { width: 17px; height: 17px; stroke-width: 2.2; }
+    /* 44×44 touch target around the 38px visual; the 3px bleed matches half
+       the 6px gap so neighbouring hit areas meet without overlapping. */
+    .gl-btn::after { content: ''; position: absolute; inset: -3px; }
+    .gl-btn-accent { background: var(--serve); }
+    .gl-btn-accent:active { background: #00a08a; }
 
-    #score-wrap { text-align: center; }
-    #score-teams { font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.55); letter-spacing: 1.5px; text-transform: uppercase; }
-    #score-nums { font-family: 'Barlow Condensed', sans-serif; font-size: 34px; font-weight: 900; line-height: 1; letter-spacing: 1px; color: #fff; }
+    #score-teams {
+      grid-column: 1 / -1; text-align: center;
+      font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.55); letter-spacing: 1.5px; text-transform: uppercase;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    #score-nums { font-family: 'Barlow Condensed', sans-serif; font-size: 34px; font-weight: 900; line-height: 1; letter-spacing: 1px; color: #fff; text-align: center; }
     #score-nums .sh { color: #82b4ff; }
     #score-nums .sa { color: #ff8a80; }
     #score-nums .sep { color: rgba(255,255,255,0.35); font-weight: 500; margin: 0 3px; }
 
     /* Active clip indicator */
     #rec-bar {
-      display: flex; align-items: center; justify-content: flex-end;
+      grid-column: 1 / -1;
+      display: flex; align-items: center; justify-content: center;
       min-width: 0;
     }
+    #rec-bar:not(:empty) { margin-top: 4px; }
     .rec-pill {
       display: flex; align-items: center; gap: 7px;
       backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
       border: 1px solid transparent;
       border-radius: 100px; padding: 5px 14px;
       font-family: 'Barlow Condensed', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 0.5px;
-      max-width: min(44vw, 260px);
+      max-width: min(90vw, 320px);
       white-space: nowrap; overflow: hidden;
     }
     .rec-pill span { overflow: hidden; text-overflow: ellipsis; }
@@ -221,6 +178,14 @@
 
     /* Spacer */
     #ed-spacer { flex: 1; }
+
+    /* Narrow phones (iPhone SE/mini, small Androids): keep the three right-side
+       buttons plus the score on one row. */
+    @media (max-width: 370px) {
+      .gl-btn { width: 34px; height: 34px; }
+      .gl-btn::after { inset: -5px; }
+      #score-nums { font-size: 28px; }
+    }
 
     /* Progress */
     #progress-wrap {
@@ -286,7 +251,7 @@
     #ed-controls {
       position: relative; z-index: 5;
       display: flex; align-items: center; justify-content: space-between;
-      padding: 10px 20px 42px; 
+      padding: 10px calc(20px + env(safe-area-inset-right, 0px)) calc(42px + env(safe-area-inset-bottom, 0px)) calc(20px + env(safe-area-inset-left, 0px));
       background: linear-gradient(to top, rgba(0,0,0,0.75) 0%, transparent 100%);
     }
 
@@ -386,16 +351,20 @@
     .marks-empty { padding: 40px 20px; text-align: center; color: var(--text3); font-family: 'Barlow Condensed', sans-serif; font-size: 16px; font-weight: 600; line-height: 1.6; }
 
     /* ══════════════════════════════════════════
-       SLIDE PANELS (Review & Export)
+       EXPORT PAGE (slides in over the editor)
     ══════════════════════════════════════════ */
     .panel {
-      position: fixed; inset: 0; z-index: 50;
+      position: fixed; inset: 0; z-index: 150;
+      height: 100vh; height: 100dvh;
       background: var(--bg);
       display: flex; flex-direction: column;
-      transform: translateY(100%);
-      transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+      padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px);
+      transform: translateX(100%);
+      visibility: hidden;
+      will-change: transform;
+      transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1), visibility 0s linear 0.28s;
     }
-    .panel.open { transform: translateY(0); }
+    .panel.open { transform: translateX(0); visibility: visible; transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1), visibility 0s; }
 
     .panel-head {
       display: flex; align-items: center; gap: 12px;
@@ -412,18 +381,10 @@
     .panel-x:active { background: var(--surface2); }
     .panel-x svg { width: 16px; height: 16px; stroke-width: 2.5; }
 
-    .panel-body { flex: 1; overflow-y: auto; }
+    .panel-back { width: 44px; height: 44px; margin-left: -6px; }
+    .panel-back svg { width: 20px; height: 20px; }
 
-    /* Review list */
-    .rv-item {
-      display: flex; align-items: center; gap: 10px;
-      padding: 11px 16px; border-bottom: 1px solid var(--border);
-    }
-    .rv-num { font-family: 'Barlow Condensed', sans-serif; font-size: 13px; font-weight: 700; color: var(--text3); width: 22px; text-align: right; flex-shrink: 0; }
-    .rv-badge { border-radius: 6px; padding: 3px 8px; font-family: 'Barlow Condensed', sans-serif; font-size: 11px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase; flex-shrink: 0; }
-    .rv-times { flex: 1; display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
-    .rv-chip { background: var(--surface); border-radius: 5px; padding: 2px 7px; font-size: 11px; color: var(--text2); font-weight: 600; font-family: 'Barlow', sans-serif; }
-    .rv-star { font-size: 14px; flex-shrink: 0; }
+    .panel-body { flex: 1; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 
     /* Export */
     .export-body {
@@ -531,10 +492,76 @@
     .dl-btn svg { width: 18px; height: 18px; stroke-width: 2.2; }
 
     /* ══════════════════════════════════════════
+       SIDE MENU (left drawer)
+    ══════════════════════════════════════════ */
+    #side-menu {
+      position: fixed; inset: 0; z-index: 250; /* above editor/export, below marks/reset/import modals */
+      visibility: hidden;
+      transition: visibility 0s linear 0.26s;
+    }
+    #side-menu.open { visibility: visible; transition: visibility 0s; }
+    .menu-backdrop {
+      position: absolute; inset: 0; background: rgba(0,0,0,0.5);
+      opacity: 0; transition: opacity 0.26s ease;
+    }
+    #side-menu.open .menu-backdrop { opacity: 1; }
+    .menu-sheet {
+      position: absolute; top: 0; bottom: 0; left: 0;
+      width: min(300px, 85vw);
+      background: var(--bg);
+      display: flex; flex-direction: column;
+      padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+      box-shadow: 4px 0 24px rgba(0,0,0,0.18);
+      transform: translateX(-100%);
+      will-change: transform;
+      transition: transform 0.26s cubic-bezier(0.32, 0.72, 0, 1);
+      touch-action: pan-y; /* vertical scroll stays native; horizontal swipe-to-close is handled in app.js */
+    }
+    #side-menu.open .menu-sheet { transform: translateX(0); }
+    #side-menu.dragging .menu-sheet, #side-menu.dragging .menu-backdrop { transition: none; }
+
+    .menu-head {
+      display: flex; align-items: center; gap: 10px;
+      padding: 0 12px 0 16px; height: var(--header-h);
+      border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    .menu-logo {
+      height: 32px; width: auto; display: block;
+      -webkit-touch-callout: none; user-select: none; -webkit-user-select: none;
+    }
+    .menu-brand { font-family: 'Barlow Condensed', sans-serif; font-size: 20px; font-weight: 900; flex: 1; letter-spacing: -0.3px; }
+    .menu-body {
+      flex: 1; overflow-y: auto; overscroll-behavior: contain;
+      display: flex; flex-direction: column;
+      padding: 8px 0 12px;
+    }
+    .menu-label {
+      font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 700;
+      color: var(--text3); letter-spacing: 1.2px; text-transform: uppercase;
+      padding: 14px 16px 6px;
+    }
+    /* Stacked full-width so real team names fit on a phone-width drawer; the
+       left accent stands in for the side-by-side home/away colouring. */
+    .menu-teams { display: flex; flex-direction: column; gap: 8px; padding: 0 16px 6px; }
+    .menu-teams .vs { display: none; }
+    .menu-teams .team-input { border-left: 4px solid var(--home); }
+    .menu-teams .team-input.away { border-left-color: var(--away); }
+    .menu-item {
+      display: flex; align-items: center; gap: 14px;
+      width: 100%; min-height: 52px; padding: 0 16px;
+      border: none; background: none; cursor: pointer; text-align: left;
+      font-size: 15px; font-weight: 600; color: var(--text);
+    }
+    .menu-item:active { background: var(--surface); }
+    .menu-item svg { width: 20px; height: 20px; stroke-width: 2; color: var(--text2); flex-shrink: 0; }
+    .menu-item.danger, .menu-item.danger svg { color: var(--danger); }
+    .menu-spacer { flex: 1; min-height: 16px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+
+    /* ══════════════════════════════════════════
        SNACKBAR
     ══════════════════════════════════════════ */
     #snack {
-      position: fixed; bottom: 82px; left: 50%;
+      position: fixed; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); left: 50%;
       transform: translateX(-50%) translateY(16px);
       background: rgba(20,20,20,0.92); color: #fff;
       padding: 9px 18px; border-radius: 100px;
@@ -544,18 +571,6 @@
       backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
     }
     #snack.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-
-    /* Header icon button */
-    .header-btn {
-      width: 34px; height: 34px; border-radius: 50%;
-      border: 1.5px solid var(--border);
-      background: var(--surface); color: var(--text2);
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer; flex-shrink: 0;
-      transition: background var(--trans), color var(--trans), border-color var(--trans);
-    }
-    .header-btn:active { background: var(--surface2); color: var(--danger); border-color: var(--danger); }
-    .header-btn svg { width: 15px; height: 15px; stroke-width: 2.2; }
 
     /* Reset confirm modal */
     #reset-modal, #import-modal, #resume-modal {

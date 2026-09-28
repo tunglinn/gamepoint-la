@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>GamePointLa</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" type="image/png" href="img/icon.png">
@@ -24,97 +24,47 @@
 </head>
 <body>
 
-<!-- ══════ MAIN VIEW ══════ -->
-<div id="main-view">
-
-  <div id="header">
-    <div class="logo">
-      <img src="img/icon.png" alt="GamePointLa">
-    </div>
-
-    <div class="team-wrap">
-      <input class="team-input" id="inp-home" type="text" placeholder="Home Team" maxlength="20" autocomplete="off">
-      <div class="team-color-bar"></div>
-    </div>
-
-    <span class="vs">VS</span>
-
-    <div class="team-wrap away">
-      <input class="team-input away" id="inp-away" type="text" placeholder="Away Team" maxlength="20" autocomplete="off">
-      <div class="team-color-bar"></div>
-    </div>
-
-    <button class="header-btn" onclick="triggerImport()" title="Import Markers">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-    </button>
-    <button class="header-btn" onclick="openResetModal()" title="Reset">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-    </button>
-  </div>
-
-  <div id="video-area">
-    <video id="shared-video" playsinline preload="metadata"></video>
-    <div id="placeholder">
-      <div class="ph-ring">📂</div>
-      <p>Open a Video</p>
-      <small>Tap to browse your device</small>
-    </div>
-  </div>
-
-  <nav id="bottom-nav">
-    <button class="nav-btn" id="nav-open" onclick="triggerOpen()">
-      <!-- folder -->
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-      Open
-    </button>
-    <button class="nav-btn" id="nav-editor" onclick="openEditor()">
-      <!-- play -->
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/></svg>
-      Editor
-    </button>
-    <button class="nav-btn" id="nav-review" onclick="openReview()">
-      <!-- list -->
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-      Review
-    </button>
-    <button class="nav-btn" id="nav-export" onclick="openExport()">
-      <!-- download -->
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-      Export
-    </button>
-  </nav>
-</div>
-
 <input type="file" id="file-input" accept="video/*">
 <input type="file" id="import-input" accept=".json,application/json">
 
 <!-- ══════ EDITOR VIEW ══════ -->
-<div id="editor-view">
-  <!-- #shared-video is moved here from #video-area when the editor opens — see
-       openEditor()/closeEditor() in app.js. -->
+<!-- The app's base screen. #shared-video lives here permanently; there is no
+     second <video> element (see the DOM section comment in app.js). -->
+<div id="editor-view" class="no-video">
+  <video id="shared-video" playsinline preload="metadata"></video>
+  <div id="placeholder" onclick="triggerOpen()">
+    <div class="ph-ring">📂</div>
+    <p>Open a Video</p>
+    <small>Tap to browse your device</small>
+  </div>
 
   <!-- Top bar -->
   <div id="ed-top">
     <div class="ed-top-side" id="ed-top-left">
-      <button class="gl-btn" onclick="closeEditor()" title="Exit (Esc)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      <button class="gl-btn" id="btn-menu" onclick="openMenu()" title="Menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
       </button>
     </div>
 
-    <div id="score-wrap">
-      <div id="score-teams">HOME vs AWAY</div>
-      <div id="score-nums"><span class="sh" id="sc-home">0</span><span class="sep">:</span><span class="sa" id="sc-away">0</span></div>
-    </div>
+    <div id="score-nums"><span class="sh" id="sc-home">0</span><span class="sep">:</span><span class="sa" id="sc-away">0</span></div>
 
     <div class="ed-top-side" id="ed-top-right">
-      <div id="rec-bar"></div>
       <button class="gl-btn" id="btn-undo" onclick="undo()" title="Undo (Ctrl+Z)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
       </button>
       <button class="gl-btn" id="btn-redo" onclick="redo()" title="Redo (Ctrl+Y)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg>
       </button>
+      <button class="gl-btn gl-btn-accent" id="btn-export" onclick="openExport()" title="Export">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      </button>
     </div>
+
+    <!-- Full-width rows under the buttons, so the right-side button group
+         never has to share a phone-width row with long team names or the
+         rally pill. -->
+    <div id="score-teams">HOME vs AWAY</div>
+    <div id="rec-bar"></div>
   </div>
 
   <!-- Flex spacer -->
@@ -177,24 +127,61 @@
   </div>
 </div>
 
-<!-- ══════ REVIEW PANEL ══════ -->
-<div class="panel" id="review-panel">
-  <div class="panel-head">
-    <span class="panel-title">Review</span>
-    <button class="panel-x" onclick="closePanel('review-panel')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-    </button>
+<!-- ══════ SIDE MENU ══════ -->
+<div id="side-menu">
+  <div class="menu-backdrop" onclick="closeMenu()"></div>
+  <div class="menu-sheet">
+    <div class="menu-head">
+      <img class="menu-logo" id="menu-logo" src="img/icon.png" alt="GamePointLa" draggable="false">
+      <span class="menu-brand">GamePointLa</span>
+      <button class="panel-x" onclick="closeMenu()" title="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="menu-body">
+      <div class="menu-label">Match</div>
+      <div class="menu-teams">
+        <div class="team-wrap">
+          <input class="team-input" id="inp-home" type="text" placeholder="Home Team" maxlength="20" autocomplete="off" enterkeyhint="done">
+          <div class="team-color-bar"></div>
+        </div>
+        <span class="vs">VS</span>
+        <div class="team-wrap away">
+          <input class="team-input away" id="inp-away" type="text" placeholder="Away Team" maxlength="20" autocomplete="off" enterkeyhint="done">
+          <div class="team-color-bar"></div>
+        </div>
+      </div>
+
+      <div class="menu-label">File</div>
+      <button class="menu-item" onclick="triggerOpen()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        Open Video
+      </button>
+      <button class="menu-item" onclick="triggerImport()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Load Markers
+      </button>
+      <button class="menu-item" id="menu-save-markers" onclick="doExport()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Save Markers
+      </button>
+
+      <div class="menu-spacer"></div>
+      <button class="menu-item danger" onclick="openResetModal()" title="Reset">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+        Reset
+      </button>
+    </div>
   </div>
-  <div class="panel-body" id="review-body"></div>
 </div>
 
 <!-- ══════ EXPORT PANEL ══════ -->
 <div class="panel" id="export-panel">
   <div class="panel-head">
-    <span class="panel-title">Export</span>
-    <button class="panel-x" onclick="closePanel('export-panel')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    <button class="panel-x panel-back" id="export-back" onclick="closeExport()" title="Back to editor">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="15 18 9 12 15 6"/></svg>
     </button>
+    <span class="panel-title">Export</span>
   </div>
   <div class="panel-body" id="export-body"></div>
 </div>
