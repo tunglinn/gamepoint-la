@@ -1,11 +1,14 @@
 // GamePointLa Service Worker
-const CACHE = 'gamepointla-v4';
+const CACHE = 'gamepointla-v5';
+// Only paths that exist on every host serving this project. The editor is at
+// "/" on app.gamepointla.com (see functions/_middleware.js); "/app" must NOT
+// be listed — on gamepointla.com it 301s cross-origin to the subdomain, which
+// makes cache.addAll() reject and the install fail, leaving the previous
+// worker serving stale files forever.
 const ASSETS = [
   './',
-  './index.html',
-  '/app',
   './manifest.webmanifest',
-  '/app/lib/mp4-muxer.js',
+  './app/lib/mp4-muxer.js',
 ];
 
 self.addEventListener('install', e => {
