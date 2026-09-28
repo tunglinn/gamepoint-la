@@ -112,7 +112,6 @@ test('marking a rally autosaves, and re-picking the same video after a reload of
   const bytesArray = await generateTestMp4(page);
   await pickFile(page, bytesArray);
 
-  await page.locator('#nav-editor').click();
   await addClipViaApi(page, 0.1, 0.3);
   await waitForAutosave(page);
 
@@ -135,7 +134,6 @@ test('picking a different video does not trigger the resume prompt', async ({ pa
   const bytesArray = await generateTestMp4(page);
   await pickFile(page, bytesArray, { lastModified: FIXED_LAST_MODIFIED });
 
-  await page.locator('#nav-editor').click();
   await addClipViaApi(page, 0.1, 0.3);
   await waitForAutosave(page);
 
@@ -151,11 +149,10 @@ test('Reset clears the cached session so it is not offered again', async ({ page
   const bytesArray = await generateTestMp4(page);
   await pickFile(page, bytesArray);
 
-  await page.locator('#nav-editor').click();
   await addClipViaApi(page, 0.1, 0.3);
   await waitForAutosave(page);
 
-  await page.locator('#editor-view').press('Escape'); // closeEditor()
+  await page.locator('#btn-menu').click();
   await page.locator('[title="Reset"]').click();
   await page.locator('#reset-modal button:has-text("Reset")').click();
 
@@ -183,7 +180,6 @@ test('a failed autosave (e.g. IndexedDB unavailable) tells the user to save manu
 
   const bytesArray = await generateTestMp4(page);
   await pickFile(page, bytesArray);
-  await page.locator('#nav-editor').click();
   await addClipViaApi(page, 0.1, 0.3);
 
   // Marking still works even though the cache can't — this must never break
